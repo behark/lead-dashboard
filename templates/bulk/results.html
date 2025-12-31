@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Send Results{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('bulk.bulk_send') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back to Bulk Send
+    </a>
+    <h4 class="mt-2">Send Results</h4>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-3">
+                        <h2>{{ results.total }}</h2>
+                        <small class="text-muted">Total</small>
+                    </div>
+                    <div class="col-3">
+                        <h2 class="text-success">{{ results.sent }}</h2>
+                        <small class="text-muted">Sent</small>
+                    </div>
+                    <div class="col-3">
+                        <h2 class="text-danger">{{ results.failed }}</h2>
+                        <small class="text-muted">Failed</small>
+                    </div>
+                    <div class="col-3">
+                        <h2 class="text-warning">{{ results.skipped }}</h2>
+                        <small class="text-muted">Skipped</small>
+                    </div>
+                </div>
+                
+                <div class="progress mt-4" style="height: 30px;">
+                    {% set sent_pct = (results.sent / results.total * 100) if results.total > 0 else 0 %}
+                    {% set failed_pct = (results.failed / results.total * 100) if results.total > 0 else 0 %}
+                    {% set skipped_pct = (results.skipped / results.total * 100) if results.total > 0 else 0 %}
+                    
+                    <div class="progress-bar bg-success" style="width: {{ sent_pct }}%">
+                        {{ results.sent }} sent
+                    </div>
+                    <div class="progress-bar bg-danger" style="width: {{ failed_pct }}%">
+                        {{ results.failed }} failed
+                    </div>
+                    <div class="progress-bar bg-warning" style="width: {{ skipped_pct }}%">
+                        {{ results.skipped }} skipped
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% if results.errors %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Errors & Skipped</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    {% for error in results.errors %}
+                    <li class="list-group-item small">{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Next Steps</h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Messages sent! Here's what to do next:</p>
+                
+                <ul class="small">
+                    <li>Wait 24 hours for responses</li>
+                    <li>Check the <a href="{{ url_for('bulk.followup_queue') }}">Follow-up Queue</a> tomorrow</li>
+                    <li>Record responses in lead details</li>
+                </ul>
+                
+                <a href="{{ url_for('main.index') }}" class="btn btn-primary w-100 mt-3">
+                    Go to Leads
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

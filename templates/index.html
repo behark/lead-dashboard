@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Leads - Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Lead Dashboard <small class="text-muted fs-6">{{ stats.total }} total leads</small></h4>
+</div>
+
+<!-- Stats Row -->
+<div class="row mb-4">
+    <div class="col-md-2">
+        <div class="stat-card bg-primary text-white">
+            <h3>{{ stats.total }}</h3>
+            <small>Total Leads</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card stat-hot">
+            <h3>{{ stats.by_temperature.HOT|default(0) }}</h3>
+            <small>HOT</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card bg-secondary text-white">
+            <h3>{{ stats.by_status.NEW|default(0) }}</h3>
+            <small>NEW</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card bg-info text-white">
+            <h3>{{ stats.by_status.CONTACTED|default(0) }}</h3>
+            <small>CONTACTED</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card bg-warning">
+            <h3>{{ stats.by_status.REPLIED|default(0) }}</h3>
+            <small>REPLIED</small>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="stat-card bg-success text-white">
+            <h3>{{ stats.by_status.CLOSED|default(0) }}</h3>
+            <small>CLOSED</small>
+        </div>
+    </div>
+</div>
+
+<!-- Conversion & Attention Row -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="metric-card">
+            <div class="row text-center">
+                <div class="col-6">
+                    <h4 class="text-primary">{{ stats.conversion.response_rate }}%</h4>
+                    <small class="text-muted">Response Rate</small>
+                </div>
+                <div class="col-6">
+                    <h4 class="text-success">{{ stats.conversion.close_rate }}%</h4>
+                    <small class="text-muted">Close Rate</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="metric-card">
+            <small class="text-muted">Recent Activity (7 days)</small>
+            <div class="d-flex justify-content-around mt-2">
+                <div class="text-center">
+                    <strong>{{ stats.recent_activity.new_leads }}</strong>
+                    <br><small>New</small>
+                </div>
+                <div class="text-center">
+                    <strong>{{ stats.recent_activity.contacts_made }}</strong>
+                    <br><small>Contacts</small>
+                </div>
+                <div class="text-center">
+                    <strong>{{ stats.recent_activity.responses }}</strong>
+                    <br><small>Responses</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        {% if attention.hot_neglected %}
+        <div class="metric-card attention-card">
+            <small class="text-danger"><i class="bi bi-exclamation-triangle"></i> Needs Attention</small>
+            <div class="mt-2">
+                <strong>{{ attention.hot_neglected|length }}</strong> hot leads not contacted recently
+            </div>
+            <a href="?temp=HOT&status=NEW" class="btn btn-sm btn-outline-danger mt-2">View</a>
+        </div>
+        {% else %}
+        <div class="metric-card">
+            <small class="text-success"><i class="bi bi-check-circle"></i> All Good</small>
+            <div class="mt-2">No urgent leads needing attention</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+    <form method="GET" action="{{ url_for('main.index') }}" class="row g-2 align-items-center">
+        <div class="col-md-2">
+            <input type="text" name="search" class="form-control" placeholder="Search name..." value="{{ search_query }}">
+        </div>
+        <div class="col-md-2">
+            <select name="country" class="form-select">
+                <option value="">All Countries</option>
+                {% for country in countries %}
+                <option value="{{ country }}" {% if current_filters.country == country %}selected{% endif %}>{{ country }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="category" class="form-select">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                <option value="{{ cat }}" {% if current_filters.category == cat %}selected{% endif %}>{{ cat }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-1">
+            <select name="status" class="form-select">
+                <option value="">Status</option>
+                <option value="NEW" {% if current_filters.status == 'NEW' %}selected{% endif %}>NEW</option>
+                <option value="CONTACTED" {% if current_filters.status == 'CONTACTED' %}selected{% endif %}>CONTACTED</option>
+                <option value="REPLIED" {% if current_filters.status == 'REPLIED' %}selected{% endif %}>REPLIED</option>
+                <option value="CLOSED" {% if current_filters.status == 'CLOSED' %}selected{% endif %}>CLOSED</option>
+                <option value="LOST" {% if current_filters.status == 'LOST' %}selected{% endif %}>LOST</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <select name="temp" class="form-select">
+                <option value="">Temp</option>
+                <option value="HOT" {% if current_filters.temp == 'HOT' %}selected{% endif %}>HOT</option>
+                <option value="WARM" {% if current_filters.temp == 'WARM' %}selected{% endif %}>WARM</option>
+                <option value="COLD" {% if current_filters.temp == 'COLD' %}selected{% endif %}>COLD</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select name="assigned" class="form-select">
+                <option value="">All Assigned</option>
+                <option value="mine" {% if current_filters.assigned == 'mine' %}selected{% endif %}>My Leads</option>
+                <option value="unassigned" {% if current_filters.assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                {% for user in users %}
+                <option value="{{ user.id }}" {% if current_filters.assigned == user.id|string %}selected{% endif %}>{{ user.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-1">
+            <select name="sort" class="form-select">
+                <option value="score" {% if current_filters.sort == 'score' %}selected{% endif %}>Score</option>
+                <option value="date" {% if current_filters.sort == 'date' %}selected{% endif %}>Date</option>
+                <option value="followup" {% if current_filters.sort == 'followup' %}selected{% endif %}>Follow-up</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <button type="submit" class="btn btn-primary w-100">Filter</button>
+        </div>
+    </form>
+    <div class="mt-2">
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <span class="text-muted ms-3">Page {{ pagination.page }}/{{ pagination.pages }} ({{ pagination.total }} results)</span>
+    </div>
+</div>
+
+<!-- Bulk Actions -->
+<form method="POST" action="{{ url_for('main.bulk_action') }}" id="bulkForm">
+    <div class="d-flex gap-2 mb-3">
+        <select name="action" class="form-select form-select-sm" style="width: auto;" id="bulkAction">
+            <option value="">Bulk Action...</option>
+            <option value="assign">Assign to User</option>
+            <option value="status">Change Status</option>
+            <option value="enroll_sequence">Enroll in Sequence</option>
+            <option value="recalculate_scores">Recalculate Scores</option>
+        </select>
+        <select name="assign_to" class="form-select form-select-sm d-none" style="width: auto;" id="assignSelect">
+            <option value="">Select User</option>
+            {% for user in users %}
+            <option value="{{ user.id }}">{{ user.username }}</option>
+            {% endfor %}
+        </select>
+        <select name="new_status" class="form-select form-select-sm d-none" style="width: auto;" id="statusSelect">
+            <option value="NEW">NEW</option>
+            <option value="CONTACTED">CONTACTED</option>
+            <option value="REPLIED">REPLIED</option>
+            <option value="CLOSED">CLOSED</option>
+            <option value="LOST">LOST</option>
+        </select>
+        <select name="sequence_id" class="form-select form-select-sm d-none" style="width: auto;" id="sequenceSelect">
+            <option value="">Select Sequence</option>
+            <!-- Populated dynamically -->
+        </select>
+        <button type="submit" class="btn btn-sm btn-outline-primary">Apply</button>
+    </div>
+
+    <!-- Leads Table -->
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-hover lead-table mb-0">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAll"></th>
+                        <th>Name</th>
+                        <th>Contact</th>
+                        <th>Location</th>
+                        <th>Category</th>
+                        <th>Score</th>
+                        <th>Status</th>
+                        <th>Assigned</th>
+                        <th>Follow-up</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for lead in leads %}
+                <tr class="{% if lead.temperature.value == 'HOT' %}temp-hot{% elif lead.temperature.value == 'WARM' %}temp-warm{% else %}temp-cold{% endif %}">
+                    <td><input type="checkbox" name="lead_ids" value="{{ lead.id }}" class="lead-checkbox"></td>
+                    <td>
+                        <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}">
+                            <strong>{{ lead.name }}</strong>
+                        </a>
+                        {% if lead.rating %}
+                        <br><small class="text-muted">{{ lead.rating }}⭐</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ lead.phone }}
+                        {% if lead.email %}<br><small>{{ lead.email }}</small>{% endif %}
+                    </td>
+                    <td>
+                        {{ lead.city }}
+                        <br><span class="badge bg-info">{{ lead.country }}</span>
+                    </td>
+                    <td>{{ lead.category }}</td>
+                    <td>
+                        <strong>{{ lead.lead_score }}</strong>
+                        <br><span class="badge {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">{{ lead.temperature.value }}</span>
+                    </td>
+                    <td>
+                        <span class="badge {% if lead.status.value == 'NEW' %}bg-secondary{% elif lead.status.value == 'CONTACTED' %}bg-info{% elif lead.status.value == 'REPLIED' %}bg-warning text-dark{% elif lead.status.value == 'CLOSED' %}bg-success{% else %}bg-dark{% endif %}">
+                            {{ lead.status.value }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if lead.assigned_user %}
+                        {{ lead.assigned_user.username }}
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if lead.next_followup %}
+                        <small>{{ lead.next_followup.strftime('%m/%d') }}</small>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            {% if lead.whatsapp_link %}
+                            <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn wa-btn" title="WhatsApp">
+                                <i class="bi bi-whatsapp"></i>
+                            </a>
+                            {% endif %}
+                            <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}" class="btn btn-outline-secondary" title="View">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</form>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('main.index', page=pagination.prev_num, **current_filters) }}">Previous</a>
+        </li>
+        {% endif %}
+        
+        {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                {% else %}
+                <li class="page-item"><a class="page-link" href="{{ url_for('main.index', page=p, **current_filters) }}">{{ p }}</a></li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('main.index', page=pagination.next_num, **current_filters) }}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('selectAll').addEventListener('change', function() {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = this.checked);
+});
+
+document.getElementById('bulkAction').addEventListener('change', function() {
+    document.getElementById('assignSelect').classList.toggle('d-none', this.value !== 'assign');
+    document.getElementById('statusSelect').classList.toggle('d-none', this.value !== 'status');
+    document.getElementById('sequenceSelect').classList.toggle('d-none', this.value !== 'enroll_sequence');
+});
+</script>
+{% endblock %}

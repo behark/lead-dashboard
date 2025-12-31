@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Create Template{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('templates.list_templates') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h4 class="mt-2">Create Message Template</h4>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Template Name *</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">Channel *</label>
+                        <select name="channel" class="form-select" required id="channelSelect">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">Variant (A/B Test)</label>
+                        <select name="variant" class="form-select">
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Language</label>
+                        <select name="language" class="form-select">
+                            <option value="sq">Albanian</option>
+                            <option value="en">English</option>
+                            <option value="de">German</option>
+                            <option value="it">Italian</option>
+                            <option value="fr">French</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Target Category</label>
+                        <input type="text" name="category" class="form-control" placeholder="e.g., barber, dentist">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3" id="subjectField" style="display: none;">
+                <label class="form-label">Email Subject</label>
+                <input type="text" name="subject" class="form-control" placeholder="Use {business_name} for personalization">
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">Message Content *</label>
+                <textarea name="content" class="form-control" rows="8" required placeholder="Use placeholders: {business_name}, {city}, {rating}, {category}"></textarea>
+                <small class="text-muted">Available placeholders: {business_name}, {city}, {rating}, {category}</small>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Create Template</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('channelSelect').addEventListener('change', function() {
+    document.getElementById('subjectField').style.display = this.value === 'email' ? 'block' : 'none';
+});
+</script>
+{% endblock %}

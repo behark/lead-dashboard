@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Sequence{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('templates.list_sequences') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h4 class="mt-2">Edit Sequence: {{ sequence.name }}</h4>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <!-- Sequence Settings -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Sequence Settings</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" name="name" class="form-control" value="{{ sequence.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea name="description" class="form-control" rows="2">{{ sequence.description or '' }}</textarea>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="is_active" class="form-check-input" id="isActive" {% if sequence.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="isActive">Active</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Save Settings</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Add Step -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Add Step</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('templates.add_sequence_step', sequence_id=sequence.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">Channel</label>
+                        <select name="channel" class="form-select" required id="stepChannel">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Message Template</label>
+                        <select name="template_id" class="form-select" id="stepTemplate">
+                            <option value="">Select template...</option>
+                            {% for t in templates %}
+                            <option value="{{ t.id }}" data-channel="{{ t.channel.value }}">{{ t.name }} ({{ t.channel.value }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">Delay (Days)</label>
+                            <input type="number" name="delay_days" class="form-control" value="0" min="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Delay (Hours)</label>
+                            <input type="number" name="delay_hours" class="form-control" value="0" min="0" max="23">
+                        </div>
+                    </div>
+                    <small class="text-muted">Delay after previous step (or enrollment for step 1)</small>
+                    <button type="submit" class="btn btn-success w-100 mt-3">Add Step</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <!-- Steps Timeline -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <h6 class="mb-0">Sequence Steps</h6>
+                <span class="badge bg-primary">{{ steps|length }} steps</span>
+            </div>
+            <div class="card-body">
+                {% if steps %}
+                <div class="sequence-timeline">
+                    {% for step in steps %}
+                    <div class="sequence-step">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">
+                                    Step {{ step.step_number }}
+                                    <span class="badge {% if step.channel.value == 'whatsapp' %}bg-success{% elif step.channel.value == 'email' %}bg-danger{% else %}bg-primary{% endif %}">
+                                        {{ step.channel.value }}
+                                    </span>
+                                </h6>
+                                {% if step.template %}
+                                <p class="mb-1">Template: <strong>{{ step.template.name }}</strong></p>
+                                <small class="text-muted">{{ step.template.content[:100] }}...</small>
+                                {% else %}
+                                <p class="text-warning mb-0">No template selected</p>
+                                {% endif %}
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted d-block">
+                                    {% if step.delay_days or step.delay_hours %}
+                                    Wait {{ step.delay_days }}d {{ step.delay_hours }}h
+                                    {% else %}
+                                    Immediate
+                                    {% endif %}
+                                </small>
+                                <form method="POST" action="{{ url_for('templates.delete_sequence_step', sequence_id=sequence.id, step_id=step.id) }}" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger mt-2" onclick="return confirm('Delete this step?')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-diagram-3 fs-1"></i>
+                    <p class="mt-2">No steps yet. Add your first step using the form on the left.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Stats -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Sequence Stats</h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h4>{{ sequence.leads.count() }}</h4>
+                        <small class="text-muted">Leads Enrolled</small>
+                    </div>
+                    <div class="col-4">
+                        <h4>{{ sequence.leads.filter_by(status='REPLIED').count() }}</h4>
+                        <small class="text-muted">Responded</small>
+                    </div>
+                    <div class="col-4">
+                        <h4>{{ steps|length }}</h4>
+                        <small class="text-muted">Steps</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Delete -->
+        <div class="mt-4">
+            <form method="POST" action="{{ url_for('templates.delete_sequence', sequence_id=sequence.id) }}" onsubmit="return confirm('Delete this sequence? This will unenroll all leads.')">
+                <button type="submit" class="btn btn-outline-danger">
+                    <i class="bi bi-trash"></i> Delete Sequence
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Filter templates by selected channel
+document.getElementById('stepChannel').addEventListener('change', function() {
+    const channel = this.value;
+    const templateSelect = document.getElementById('stepTemplate');
+    
+    Array.from(templateSelect.options).forEach(option => {
+        if (option.value === '') return;
+        option.style.display = option.dataset.channel === channel ? '' : 'none';
+    });
+    
+    templateSelect.value = '';
+});
+</script>
+{% endblock %}

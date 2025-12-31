@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Template{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('templates.list_templates') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+    <h4 class="mt-2">Edit Template: {{ template.name }}</h4>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Template Name</label>
+                        <input type="text" name="name" class="form-control" value="{{ template.name }}" required>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">Channel</label>
+                        <input type="text" class="form-control" value="{{ template.channel.value }}" disabled>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">Variant</label>
+                        <select name="variant" class="form-select">
+                            <option value="A" {% if template.variant == 'A' %}selected{% endif %}>A</option>
+                            <option value="B" {% if template.variant == 'B' %}selected{% endif %}>B</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Language</label>
+                        <select name="language" class="form-select">
+                            <option value="sq" {% if template.language == 'sq' %}selected{% endif %}>Albanian</option>
+                            <option value="en" {% if template.language == 'en' %}selected{% endif %}>English</option>
+                            <option value="de" {% if template.language == 'de' %}selected{% endif %}>German</option>
+                            <option value="it" {% if template.language == 'it' %}selected{% endif %}>Italian</option>
+                            <option value="fr" {% if template.language == 'fr' %}selected{% endif %}>French</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Target Category</label>
+                        <input type="text" name="category" class="form-control" value="{{ template.category or '' }}">
+                    </div>
+                </div>
+            </div>
+            
+            {% if template.channel.value == 'email' %}
+            <div class="mb-3">
+                <label class="form-label">Email Subject</label>
+                <input type="text" name="subject" class="form-control" value="{{ template.subject or '' }}">
+            </div>
+            {% endif %}
+            
+            <div class="mb-3">
+                <label class="form-label">Message Content</label>
+                <textarea name="content" class="form-control" rows="8" required>{{ template.content }}</textarea>
+            </div>
+            
+            <div class="mb-3 form-check">
+                <input type="checkbox" name="is_active" class="form-check-input" id="isActive" {% if template.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="isActive">Active</label>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <form method="POST" action="{{ url_for('templates.delete_template', template_id=template.id) }}" onsubmit="return confirm('Delete this template?')">
+                    <button type="submit" class="btn btn-outline-danger">Delete</button>
+                </form>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Stats Card -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h6 class="mb-0">Template Performance</h6>
+    </div>
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-3">
+                <h4>{{ template.times_sent }}</h4>
+                <small class="text-muted">Times Sent</small>
+            </div>
+            <div class="col-md-3">
+                <h4>{{ template.times_opened }}</h4>
+                <small class="text-muted">Times Opened</small>
+            </div>
+            <div class="col-md-3">
+                <h4>{{ "%.1f"|format(template.open_rate) }}%</h4>
+                <small class="text-muted">Open Rate</small>
+            </div>
+            <div class="col-md-3">
+                <h4>{{ "%.1f"|format(template.response_rate) }}%</h4>
+                <small class="text-muted">Response Rate</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

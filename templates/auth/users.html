@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>User Management</h4>
+    <a href="{{ url_for('auth.register') }}" class="btn btn-primary">
+        <i class="bi bi-person-plus"></i> Add User
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Leads Assigned</th>
+                    <th>Closed Deals</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.email }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('auth.change_role', user_id=user.id) }}" class="d-inline">
+                            <select name="role" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()" {% if user.id == current_user.id %}disabled{% endif %}>
+                                <option value="admin" {% if user.role.value == 'admin' %}selected{% endif %}>Admin</option>
+                                <option value="manager" {% if user.role.value == 'manager' %}selected{% endif %}>Manager</option>
+                                <option value="sales" {% if user.role.value == 'sales' %}selected{% endif %}>Sales</option>
+                            </select>
+                        </form>
+                    </td>
+                    <td>{{ user.leads_count }}</td>
+                    <td>{{ user.closed_leads_count }}</td>
+                    <td>
+                        {% if user.is_active %}
+                        <span class="badge bg-success">Active</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if user.id != current_user.id %}
+                        <form method="POST" action="{{ url_for('auth.toggle_user', user_id=user.id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-sm {% if user.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                {% if user.is_active %}Disable{% else %}Enable{% endif %}
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

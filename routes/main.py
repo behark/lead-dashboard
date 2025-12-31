@@ -1,0 +1,331 @@
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask_login import login_required, current_user
+from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel
+from services.analytics_service import AnalyticsService
+from services.scoring_service import ScoringService
+from services.contact_service import ContactService
+from services.sequence_service import SequenceService
+from datetime import datetime, timezone
+from collections import Counter
+
+main_bp = Blueprint('main', __name__)
+
+LEADS_PER_PAGE = 50
+
+
+@main_bp.route('/')
+@login_required
+def index():
+    # Get all leads for stats calculation
+    all_leads_query = Lead.query
+    
+    # Filters
+    temp_filter = request.args.get('temp')
+    status_filter = request.args.get('status')
+    cat_filter = request.args.get('category')
+    country_filter = request.args.get('country')
+    search_query = request.args.get('search', '').strip()
+    assigned_filter = request.args.get('assigned')
+    
+    # Build query
+    query = Lead.query
+    
+    if temp_filter:
+        try:
+            query = query.filter(Lead.temperature == LeadTemperature(temp_filter))
+        except ValueError:
+            pass
+    
+    if status_filter:
+        try:
+            query = query.filter(Lead.status == LeadStatus(status_filter))
+        except ValueError:
+            pass
+    
+    if cat_filter:
+        query = query.filter(Lead.category == cat_filter)
+    
+    if country_filter:
+        query = query.filter(Lead.country == country_filter)
+    
+    if search_query:
+        query = query.filter(Lead.name.ilike(f'%{search_query}%'))
+    
+    if assigned_filter:
+        if assigned_filter == 'unassigned':
+            query = query.filter(Lead.assigned_to.is_(None))
+        elif assigned_filter == 'mine':
+            query = query.filter(Lead.assigned_to == current_user.id)
+        else:
+            try:
+                query = query.filter(Lead.assigned_to == int(assigned_filter))
+            except ValueError:
+                pass
+    
+    # Sort
+    sort_by = request.args.get('sort', 'score')
+    if sort_by == 'score':
+        query = query.order_by(Lead.lead_score.desc())
+    elif sort_by == 'date':
+        query = query.order_by(Lead.created_at.desc())
+    elif sort_by == 'name':
+        query = query.order_by(Lead.name)
+    elif sort_by == 'followup':
+        query = query.order_by(Lead.next_followup.asc().nullslast())
+    
+    # Pagination
+    page = request.args.get('page', 1, type=int)
+    pagination = query.paginate(page=page, per_page=LEADS_PER_PAGE, error_out=False)
+    leads = pagination.items
+    
+    # Get stats
+    stats = AnalyticsService.get_dashboard_stats()
+    
+    # Get unique values for filters
+    categories = db.session.query(Lead.category).distinct().order_by(Lead.category).all()
+    categories = [c[0] for c in categories if c[0]]
+    
+    countries = db.session.query(Lead.country).distinct().order_by(Lead.country).all()
+    countries = [c[0] for c in countries if c[0]]
+    
+    users = User.query.filter_by(is_active=True).all()
+    
+    # Leads needing attention
+    attention = ScoringService.get_leads_needing_attention()
+    
+    return render_template(
+        'index.html',
+        leads=leads,
+        pagination=pagination,
+        stats=stats,
+        categories=categories,
+        countries=countries,
+        users=users,
+        attention=attention,
+        search_query=search_query,
+        current_filters={
+            'temp': temp_filter,
+            'status': status_filter,
+            'category': cat_filter,
+            'country': country_filter,
+            'sort': sort_by,
+            'assigned': assigned_filter,
+        }
+    )
+
+
+@main_bp.route('/lead/<int:lead_id>')
+@login_required
+def lead_detail(lead_id):
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Get contact history
+    contact_logs = lead.contact_logs.order_by(ContactLog.sent_at.desc()).all()
+    
+    # Get available templates
+    templates = MessageTemplate.query.filter_by(is_active=True).all()
+    
+    # Get available sequences
+    sequences = Sequence.query.filter_by(is_active=True).all()
+    
+    # Get users for assignment
+    users = User.query.filter_by(is_active=True).all()
+    
+    return render_template(
+        'detail.html',
+        lead=lead,
+        contact_logs=contact_logs,
+        templates=templates,
+        sequences=sequences,
+        users=users
+    )
+
+
+@main_bp.route('/lead/<int:lead_id>/update', methods=['POST'])
+@login_required
+def update_lead(lead_id):
+    lead = Lead.query.get_or_404(lead_id)
+    
+    # Update status
+    new_status = request.form.get('status')
+    if new_status:
+        try:
+            lead.status = LeadStatus(new_status)
+            if new_status == 'CONTACTED' and not lead.last_contacted:
+                lead.last_contacted = datetime.now(timezone.utc)
+        except ValueError:
+            pass
+    
+    # Update notes
+    notes = request.form.get('notes')
+    if notes is not None:
+        lead.notes = notes
+    
+    # Update assignment
+    assigned_to = request.form.get('assigned_to')
+    if assigned_to:
+        if assigned_to == 'none':
+            lead.assigned_to = None
+        else:
+            try:
+                lead.assigned_to = int(assigned_to)
+            except ValueError:
+                pass
+    
+    # Update follow-up
+    followup = request.form.get('next_followup')
+    if followup:
+        try:
+            lead.next_followup = datetime.fromisoformat(followup).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    
+    db.session.commit()
+    
+    # Check if this is an AJAX request
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({'success': True})
+    
+    flash('Lead updated.', 'success')
+    return redirect(request.referrer or url_for('main.index'))
+
+
+@main_bp.route('/lead/<int:lead_id>/contact', methods=['POST'])
+@login_required
+def contact_lead(lead_id):
+    lead = Lead.query.get_or_404(lead_id)
+    
+    channel = request.form.get('channel')
+    template_id = request.form.get('template_id')
+    custom_message = request.form.get('message')
+    
+    # Get message
+    if template_id:
+        template = MessageTemplate.query.get(template_id)
+        if template:
+            message = ContactService.personalize_message(template.content, lead)
+            subject = ContactService.personalize_message(template.subject or '', lead) if template.subject else None
+        else:
+            flash('Template not found.', 'danger')
+            return redirect(url_for('main.lead_detail', lead_id=lead_id))
+    elif custom_message:
+        message = custom_message
+        subject = request.form.get('subject')
+        template_id = None
+    else:
+        flash('No message provided.', 'danger')
+        return redirect(url_for('main.lead_detail', lead_id=lead_id))
+    
+    # Send based on channel
+    result = None
+    if channel == 'whatsapp':
+        result = ContactService.send_whatsapp(
+            lead, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    elif channel == 'email':
+        if not subject:
+            subject = f"Hello from your business partner"
+        result = ContactService.send_email(
+            lead, subject, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    elif channel == 'sms':
+        result = ContactService.send_sms(
+            lead, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    
+    if result and result.get('success'):
+        flash(f'Message sent via {channel}!', 'success')
+    else:
+        error = result.get('error', 'Unknown error') if result else 'Send failed'
+        flash(f'Failed to send: {error}', 'danger')
+    
+    return redirect(url_for('main.lead_detail', lead_id=lead_id))
+
+
+@main_bp.route('/lead/<int:lead_id>/sequence', methods=['POST'])
+@login_required
+def enroll_sequence(lead_id):
+    lead = Lead.query.get_or_404(lead_id)
+    
+    sequence_id = request.form.get('sequence_id')
+    
+    if sequence_id:
+        if SequenceService.enroll_lead(lead, int(sequence_id)):
+            flash('Lead enrolled in sequence.', 'success')
+        else:
+            flash('Failed to enroll lead.', 'danger')
+    else:
+        SequenceService.unenroll_lead(lead)
+        flash('Lead removed from sequence.', 'info')
+    
+    return redirect(url_for('main.lead_detail', lead_id=lead_id))
+
+
+@main_bp.route('/lead/<int:lead_id>/response', methods=['POST'])
+@login_required
+def record_response(lead_id):
+    lead = Lead.query.get_or_404(lead_id)
+    
+    channel = request.form.get('channel', 'whatsapp')
+    response_content = request.form.get('response_content')
+    
+    try:
+        channel_enum = ContactChannel(channel)
+    except ValueError:
+        channel_enum = ContactChannel.WHATSAPP
+    
+    ContactService.record_response(lead, channel_enum, response_content)
+    flash('Response recorded.', 'success')
+    
+    return redirect(url_for('main.lead_detail', lead_id=lead_id))
+
+
+@main_bp.route('/bulk-action', methods=['POST'])
+@login_required
+def bulk_action():
+    action = request.form.get('action')
+    lead_ids = request.form.getlist('lead_ids')
+    
+    if not lead_ids:
+        flash('No leads selected.', 'warning')
+        return redirect(url_for('main.index'))
+    
+    leads = Lead.query.filter(Lead.id.in_(lead_ids)).all()
+    
+    if action == 'assign':
+        user_id = request.form.get('assign_to')
+        for lead in leads:
+            lead.assigned_to = int(user_id) if user_id else None
+        flash(f'{len(leads)} leads assigned.', 'success')
+    
+    elif action == 'status':
+        new_status = request.form.get('new_status')
+        try:
+            status = LeadStatus(new_status)
+            for lead in leads:
+                lead.status = status
+            flash(f'{len(leads)} leads updated.', 'success')
+        except ValueError:
+            flash('Invalid status.', 'danger')
+    
+    elif action == 'enroll_sequence':
+        sequence_id = request.form.get('sequence_id')
+        count = 0
+        for lead in leads:
+            if SequenceService.enroll_lead(lead, int(sequence_id)):
+                count += 1
+        flash(f'{count} leads enrolled in sequence.', 'success')
+    
+    elif action == 'recalculate_scores':
+        for lead in leads:
+            lead.calculate_score()
+        flash(f'Scores recalculated for {len(leads)} leads.', 'success')
+    
+    db.session.commit()
+    return redirect(url_for('main.index'))

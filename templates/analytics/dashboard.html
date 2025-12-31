@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Dashboard{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">Analytics Dashboard</h4>
+
+<div class="row mb-4">
+    <!-- Conversion Funnel -->
+    <div class="col-md-4">
+        <div class="metric-card h-100">
+            <h6 class="text-muted mb-3">Conversion Funnel</h6>
+            {% for stage in funnel %}
+            <div class="funnel-stage" style="width: {{ stage.percentage }}%; min-width: 60%; margin: 0 auto;">
+                <div class="d-flex justify-content-between">
+                    <strong>{{ stage.stage }}</strong>
+                    <span>{{ stage.count }}</span>
+                </div>
+                <div class="progress mt-1" style="height: 6px;">
+                    <div class="progress-bar" style="width: {{ stage.percentage }}%"></div>
+                </div>
+                <small class="text-muted">{{ stage.percentage }}%</small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Channel Performance -->
+    <div class="col-md-4">
+        <div class="metric-card h-100">
+            <h6 class="text-muted mb-3">Channel Performance</h6>
+            {% for channel, data in channel_perf.items() %}
+            <div class="mb-3">
+                <div class="d-flex justify-content-between">
+                    <span class="text-capitalize">{{ channel }}</span>
+                    <span>{{ data.sent }} sent</span>
+                </div>
+                <div class="progress" style="height: 20px;">
+                    <div class="progress-bar bg-success" style="width: {{ data.response_rate }}%">
+                        {{ data.response_rate }}% response
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <!-- Best Contact Times -->
+    <div class="col-md-4">
+        <div class="metric-card h-100">
+            <h6 class="text-muted mb-3">Best Contact Times</h6>
+            {% if best_times.best_day %}
+            <div class="alert alert-success">
+                <strong>Best Day:</strong> {{ best_times.best_day.day }}<br>
+                <small>{{ best_times.best_day.rate }}% response rate</small>
+            </div>
+            {% endif %}
+            {% if best_times.best_hour %}
+            <div class="alert alert-info">
+                <strong>Best Hour:</strong> {{ best_times.best_hour.hour }}<br>
+                <small>{{ best_times.best_hour.rate }}% response rate</small>
+            </div>
+            {% endif %}
+            
+            <h6 class="mt-3">By Day of Week</h6>
+            {% for day in best_times.by_day %}
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <small>{{ day.day[:3] }}</small>
+                <div class="progress flex-grow-1 mx-2" style="height: 8px;">
+                    <div class="progress-bar" style="width: {{ day.rate }}%"></div>
+                </div>
+                <small>{{ day.rate }}%</small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- Trends Chart -->
+    <div class="col-md-8">
+        <div class="metric-card">
+            <h6 class="text-muted mb-3">30-Day Trends</h6>
+            <canvas id="trendsChart" height="200"></canvas>
+        </div>
+    </div>
+    
+    <!-- Category Distribution -->
+    <div class="col-md-4">
+        <div class="metric-card h-100">
+            <h6 class="text-muted mb-3">Top Categories</h6>
+            {% for cat, count in stats.by_category.items() %}
+            <div class="d-flex justify-content-between mb-2">
+                <span>{{ cat }}</span>
+                <span class="badge bg-primary">{{ count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <!-- A/B Test Results -->
+    <div class="col-md-6">
+        <div class="metric-card">
+            <h6 class="text-muted mb-3">A/B Test Results</h6>
+            {% if ab_results %}
+            {% for key, data in ab_results.items() %}
+            <div class="mb-4">
+                <strong>{{ key }}</strong>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Variant</th>
+                                <th>Sent</th>
+                                <th>Response Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for v in data.variants %}
+                            <tr class="{% if v.variant == data.winner %}table-success{% endif %}">
+                                <td>{{ v.variant }} {% if v.variant == data.winner %}🏆{% endif %}</td>
+                                <td>{{ v.sent }}</td>
+                                <td>{{ v.response_rate }}%</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted">No A/B test data yet. Create variant templates and start sending!</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- User Performance -->
+    <div class="col-md-6">
+        <div class="metric-card">
+            <h6 class="text-muted mb-3">Team Performance</h6>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Leads</th>
+                            <th>Contacted</th>
+                            <th>Replied</th>
+                            <th>Closed</th>
+                            <th>Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in user_perf %}
+                        <tr>
+                            <td>{{ u.username }}</td>
+                            <td>{{ u.total_leads }}</td>
+                            <td>{{ u.contacted }}</td>
+                            <td>{{ u.replied }}</td>
+                            <td>{{ u.closed }}</td>
+                            <td>
+                                <span class="badge {% if u.close_rate >= 10 %}bg-success{% elif u.close_rate >= 5 %}bg-warning{% else %}bg-secondary{% endif %}">
+                                    {{ u.close_rate }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Country Distribution -->
+<div class="row">
+    <div class="col-12">
+        <div class="metric-card">
+            <h6 class="text-muted mb-3">Leads by Country</h6>
+            <div class="row">
+                {% for country, count in stats.by_country.items() %}
+                <div class="col-md-2 mb-2">
+                    <div class="border rounded p-2 text-center">
+                        <strong>{{ count }}</strong><br>
+                        <small>{{ country }}</small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const trendsData = {{ trends|tojson }};
+
+if (trendsData.length > 0) {
+    const ctx = document.getElementById('trendsChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: trendsData.map(d => d.date),
+            datasets: [
+                {
+                    label: 'Leads Created',
+                    data: trendsData.map(d => d.leads_created),
+                    borderColor: '#0d6efd',
+                    fill: false
+                },
+                {
+                    label: 'Contacts Made',
+                    data: trendsData.map(d => d.contacts_made),
+                    borderColor: '#198754',
+                    fill: false
+                },
+                {
+                    label: 'Responses',
+                    data: trendsData.map(d => d.responses),
+                    borderColor: '#ffc107',
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

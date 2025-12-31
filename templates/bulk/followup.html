@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Follow-up Queue{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Follow-up Queue</h4>
+    <a href="{{ url_for('bulk.bulk_send') }}" class="btn btn-outline-primary">
+        <i class="bi bi-send"></i> Bulk Send
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <strong>5-Step Follow-up System:</strong> 80% of sales happen after the 3rd follow-up. Don't stop at 2!
+</div>
+
+<div class="row">
+    <!-- Day 1 Follow-ups -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-1-circle"></i> Day 1 - Gentle Reminder
+                    <span class="badge bg-light text-primary float-end">{{ day1_leads|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Contacted 24h ago - Send gentle follow-up</p>
+                
+                <div class="bg-light p-2 rounded small mb-3">
+                    <strong>Template:</strong><br>
+                    Hi 👋 Just following up on my message about {business}. No rush — just wanted to check if you got my message?
+                </div>
+                
+                {% if day1_leads %}
+                <ul class="list-group list-group-flush">
+                    {% for lead in day1_leads[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ lead.name }}</strong>
+                            <br><small class="text-muted">{{ lead.category }}</small>
+                        </div>
+                        <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-sm btn-success">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% if day1_leads|length > 10 %}
+                <small class="text-muted">+{{ day1_leads|length - 10 }} more</small>
+                {% endif %}
+                {% else %}
+                <p class="text-muted text-center">No leads need Day 1 follow-up</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Day 2 Follow-ups -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-2-circle"></i> Day 2 - Problem Rephrased
+                    <span class="badge bg-light text-info float-end">{{ day2_leads|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Contacted 48h ago - Try different angle</p>
+                
+                <div class="bg-light p-2 rounded small mb-3">
+                    <strong>Template:</strong><br>
+                    Quick question: How many customers do you lose because they can't find you online?
+                </div>
+                
+                {% if day2_leads %}
+                <ul class="list-group list-group-flush">
+                    {% for lead in day2_leads[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ lead.name }}</strong>
+                            <br><small class="text-muted">{{ lead.category }}</small>
+                        </div>
+                        <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-sm btn-success">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% if day2_leads|length > 10 %}
+                <small class="text-muted">+{{ day2_leads|length - 10 }} more</small>
+                {% endif %}
+                {% else %}
+                <p class="text-muted text-center">No leads need Day 2 follow-up</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Day 3 Follow-ups (PORTFOLIO - Most Important!) -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-warning">
+            <div class="card-header bg-warning">
+                <h6 class="mb-0">
+                    <i class="bi bi-3-circle"></i> Day 3 - Portfolio ⭐ CONVERTS MOST
+                    <span class="badge bg-dark float-end">{{ day3_leads|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Contacted 72h ago - Show social proof!</p>
+                
+                <div class="bg-light p-2 rounded small mb-3">
+                    <strong>Template:</strong><br>
+                    Wanted to show you something. Here's what we did for a similar business: [PORTFOLIO_LINK]. They got 15 new customers that month!
+                </div>
+                
+                {% if day3_leads %}
+                <ul class="list-group list-group-flush">
+                    {% for lead in day3_leads[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ lead.name }}</strong>
+                            <br><small class="text-muted">{{ lead.category }}</small>
+                        </div>
+                        <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-sm btn-success">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% if day3_leads|length > 10 %}
+                <small class="text-muted">+{{ day3_leads|length - 10 }} more</small>
+                {% endif %}
+                {% else %}
+                <p class="text-muted text-center">No leads need Day 3 follow-up</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Day 5 Final Follow-ups -->
+    <div class="col-md-6 mb-4">
+        <div class="card border-secondary">
+            <div class="card-header bg-secondary text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-5-circle"></i> Day 5 - Final Message
+                    <span class="badge bg-light text-secondary float-end">{{ day5_leads|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Contacted 5 days ago - Professional exit</p>
+                
+                <div class="bg-light p-2 rounded small mb-3">
+                    <strong>Template:</strong><br>
+                    This is my last message. If you ever want help with a website, I'm here. Wishing you success! 🙏
+                </div>
+                
+                {% if day5_leads %}
+                <ul class="list-group list-group-flush">
+                    {% for lead in day5_leads[:10] %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>{{ lead.name }}</strong>
+                            <br><small class="text-muted">{{ lead.category }}</small>
+                        </div>
+                        <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-sm btn-success">
+                            <i class="bi bi-whatsapp"></i>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% if day5_leads|length > 10 %}
+                <small class="text-muted">+{{ day5_leads|length - 10 }} more</small>
+                {% endif %}
+                {% else %}
+                <p class="text-muted text-center">No leads need Day 5 follow-up</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="card mt-4">
+    <div class="card-body">
+        <h6>Follow-up Statistics</h6>
+        <div class="row text-center">
+            <div class="col-3">
+                <h4>{{ day1_leads|length + day2_leads|length + day3_leads|length + day5_leads|length }}</h4>
+                <small class="text-muted">Total Pending</small>
+            </div>
+            <div class="col-3">
+                <h4 class="text-primary">{{ day1_leads|length }}</h4>
+                <small class="text-muted">Day 1</small>
+            </div>
+            <div class="col-3">
+                <h4 class="text-warning">{{ day3_leads|length }}</h4>
+                <small class="text-muted">Day 3 (Best!)</small>
+            </div>
+            <div class="col-3">
+                <h4 class="text-secondary">{{ day5_leads|length }}</h4>
+                <small class="text-muted">Final</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

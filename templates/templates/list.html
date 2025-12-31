@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Message Templates{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Message Templates</h4>
+    <a href="{{ url_for('templates.create_template') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> New Template
+    </a>
+</div>
+
+<div class="row">
+    {% for template in templates %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>{{ template.name }}</strong>
+                    <span class="badge {% if template.channel.value == 'whatsapp' %}bg-success{% elif template.channel.value == 'email' %}bg-danger{% else %}bg-primary{% endif %} ms-2">
+                        {{ template.channel.value }}
+                    </span>
+                    <span class="badge bg-secondary">{{ template.variant }}</span>
+                    {% if not template.is_active %}
+                    <span class="badge bg-warning">Inactive</span>
+                    {% endif %}
+                </div>
+                <small class="text-muted">{{ template.language }}</small>
+            </div>
+            <div class="card-body">
+                {% if template.subject %}
+                <p class="mb-1"><strong>Subject:</strong> {{ template.subject }}</p>
+                {% endif %}
+                <p class="text-muted small mb-3">{{ template.content[:200] }}{% if template.content|length > 200 %}...{% endif %}</p>
+                
+                <div class="row text-center">
+                    <div class="col-4">
+                        <strong>{{ template.times_sent }}</strong><br>
+                        <small class="text-muted">Sent</small>
+                    </div>
+                    <div class="col-4">
+                        <strong>{{ "%.1f"|format(template.open_rate) }}%</strong><br>
+                        <small class="text-muted">Open Rate</small>
+                    </div>
+                    <div class="col-4">
+                        <strong>{{ "%.1f"|format(template.response_rate) }}%</strong><br>
+                        <small class="text-muted">Response</small>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer d-flex gap-2">
+                <a href="{{ url_for('templates.edit_template', template_id=template.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+                <form method="POST" action="{{ url_for('templates.duplicate_template', template_id=template.id) }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Duplicate (A/B)</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not templates %}
+<div class="alert alert-info">
+    No templates yet. <a href="{{ url_for('templates.create_template') }}">Create your first template</a>.
+</div>
+{% endif %}
+{% endblock %}

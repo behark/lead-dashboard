@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Outreach Sequences{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Outreach Sequences</h4>
+    <a href="{{ url_for('templates.create_sequence') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> New Sequence
+    </a>
+</div>
+
+<div class="row">
+    {% for sequence in sequences %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between">
+                <div>
+                    <strong>{{ sequence.name }}</strong>
+                    {% if sequence.is_active %}
+                    <span class="badge bg-success ms-2">Active</span>
+                    {% else %}
+                    <span class="badge bg-secondary ms-2">Inactive</span>
+                    {% endif %}
+                </div>
+                <small class="text-muted">{{ sequence.steps.count() }} steps</small>
+            </div>
+            <div class="card-body">
+                {% if sequence.description %}
+                <p class="text-muted small">{{ sequence.description }}</p>
+                {% endif %}
+                
+                <div class="sequence-timeline">
+                    {% for step in sequence.steps.order_by('step_number').limit(3) %}
+                    <div class="sequence-step">
+                        <div class="d-flex justify-content-between">
+                            <span class="badge {% if step.channel.value == 'whatsapp' %}bg-success{% elif step.channel.value == 'email' %}bg-danger{% else %}bg-primary{% endif %}">
+                                Step {{ step.step_number }}: {{ step.channel.value }}
+                            </span>
+                            <small class="text-muted">
+                                {% if step.delay_days or step.delay_hours %}
+                                After {{ step.delay_days }}d {{ step.delay_hours }}h
+                                {% else %}
+                                Immediate
+                                {% endif %}
+                            </small>
+                        </div>
+                        {% if step.template %}
+                        <small class="text-muted">{{ step.template.name }}</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% if sequence.steps.count() > 3 %}
+                    <small class="text-muted">+{{ sequence.steps.count() - 3 }} more steps</small>
+                    {% endif %}
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">{{ sequence.leads.count() }} leads enrolled</small>
+                </div>
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('templates.edit_sequence', sequence_id=sequence.id) }}" class="btn btn-sm btn-outline-primary">
+                    Edit Sequence
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not sequences %}
+<div class="alert alert-info">
+    <h5>What are Sequences?</h5>
+    <p>Sequences are automated multi-step outreach campaigns. For example:</p>
+    <ul>
+        <li><strong>Day 0:</strong> Send WhatsApp message</li>
+        <li><strong>Day 3:</strong> If no response, send Email</li>
+        <li><strong>Day 7:</strong> Final WhatsApp follow-up</li>
+    </ul>
+    <a href="{{ url_for('templates.create_sequence') }}" class="btn btn-primary">Create Your First Sequence</a>
+</div>
+{% endif %}
+{% endblock %}

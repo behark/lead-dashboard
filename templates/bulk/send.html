@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Send{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Bulk Send Messages</h4>
+    <a href="{{ url_for('bulk.followup_queue') }}" class="btn btn-outline-primary">
+        <i class="bi bi-clock-history"></i> Follow-up Queue
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Select Leads to Contact</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" id="bulkSendForm">
+                    <!-- Quick Select Buttons -->
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-sm btn-danger" onclick="selectByTemp('HOT')">
+                            Select HOT ({{ hot_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-sm btn-warning" onclick="selectByTemp('WARM')">
+                            Select WARM ({{ warm_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-sm btn-info" onclick="selectByTemp('COLD')">
+                            Select COLD ({{ cold_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectNone()">
+                            Clear
+                        </button>
+                        <span class="ms-3 text-muted" id="selectedCount">0 selected</span>
+                    </div>
+                    
+                    <!-- Leads Table -->
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-sm table-hover">
+                            <thead class="sticky-top bg-white">
+                                <tr>
+                                    <th><input type="checkbox" id="selectAllCheckbox" onchange="toggleAll(this)"></th>
+                                    <th>Name</th>
+                                    <th>Phone</th>
+                                    <th>Category</th>
+                                    <th>Temp</th>
+                                    <th>Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for lead in leads %}
+                                <tr data-temp="{{ lead.temperature.value }}" data-category="{{ lead.category }}">
+                                    <td>
+                                        <input type="checkbox" name="lead_ids" value="{{ lead.id }}" 
+                                               class="lead-checkbox" onchange="updateCount()">
+                                    </td>
+                                    <td>{{ lead.name }}</td>
+                                    <td>{{ lead.phone }}</td>
+                                    <td>{{ lead.category }}</td>
+                                    <td>
+                                        <span class="badge {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                                            {{ lead.temperature.value }}
+                                        </span>
+                                    </td>
+                                    <td>{{ lead.lead_score }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Send Options -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Send Options</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Channel</label>
+                    <select name="channel" class="form-select" form="bulkSendForm">
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Message Template</label>
+                    <select name="template_id" class="form-select" form="bulkSendForm" id="templateSelect">
+                        <option value="">Use lead's first_message</option>
+                        {% for t in templates %}
+                        <option value="{{ t.id }}" data-category="{{ t.category }}">
+                            {{ t.name }} ({{ t.channel.value }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-3 form-check">
+                    <input type="checkbox" name="dry_run" class="form-check-input" id="dryRun" form="bulkSendForm" checked>
+                    <label class="form-check-label" for="dryRun">
+                        Dry Run (test without sending)
+                    </label>
+                </div>
+                
+                <div class="alert alert-info small">
+                    <strong>Rate Limits:</strong><br>
+                    - Max 30 messages per batch<br>
+                    - 2 second delay between messages<br>
+                    - Max 200 messages per day
+                </div>
+                
+                <button type="submit" form="bulkSendForm" class="btn btn-success w-100">
+                    <i class="bi bi-send"></i> Send Messages
+                </button>
+            </div>
+        </div>
+        
+        <!-- Preview -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Message Preview</h6>
+            </div>
+            <div class="card-body">
+                <div id="previewArea" class="text-muted small">
+                    Select a lead to preview the message
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateCount() {
+    const checked = document.querySelectorAll('.lead-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = checked + ' selected';
+}
+
+function selectByTemp(temp) {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => {
+        const row = cb.closest('tr');
+        cb.checked = row.dataset.temp === temp;
+    });
+    updateCount();
+}
+
+function selectAll() {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = true);
+    updateCount();
+}
+
+function selectNone() {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = false);
+    updateCount();
+}
+
+function toggleAll(master) {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = master.checked);
+    updateCount();
+}
+
+// Preview on row click
+document.querySelectorAll('tbody tr').forEach(row => {
+    row.addEventListener('click', function(e) {
+        if (e.target.type === 'checkbox') return;
+        
+        const leadId = this.querySelector('.lead-checkbox').value;
+        const templateId = document.getElementById('templateSelect').value;
+        
+        fetch('{{ url_for("bulk.preview_message") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `lead_id=${leadId}&template_id=${templateId}`
+        })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('previewArea').innerHTML = `
+                <strong>${data.name}</strong><br>
+                <small class="text-muted">${data.phone} | ${data.category}</small>
+                <hr>
+                <pre style="white-space: pre-wrap; font-size: 0.85rem;">${data.message}</pre>
+            `;
+        });
+    });
+});
+</script>
+{% endblock %}

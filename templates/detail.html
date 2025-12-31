@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}{{ lead.name }} - Lead Detail{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm mb-2">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+        <h4>{{ lead.name }}</h4>
+    </div>
+    <div>
+        <span class="badge fs-6 {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+            {{ lead.temperature.value }} - Score: {{ lead.lead_score }}
+        </span>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Lead Info Column -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Lead Information</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><th>Phone</th><td>{{ lead.phone }}</td></tr>
+                    <tr><th>Email</th><td>{{ lead.email or '-' }}</td></tr>
+                    <tr><th>City</th><td>{{ lead.city }}</td></tr>
+                    <tr><th>Country</th><td>{{ lead.country }}</td></tr>
+                    <tr><th>Category</th><td>{{ lead.category }}</td></tr>
+                    <tr><th>Rating</th><td>{{ lead.rating }}⭐</td></tr>
+                    <tr><th>Website</th><td>{% if lead.website %}<a href="{{ lead.website }}" target="_blank">Visit</a>{% else %}None{% endif %}</td></tr>
+                    <tr><th>Created</th><td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at else '-' }}</td></tr>
+                    <tr><th>Last Contacted</th><td>{{ lead.last_contacted.strftime('%Y-%m-%d %H:%M') if lead.last_contacted else '-' }}</td></tr>
+                    <tr><th>Last Response</th><td>{{ lead.last_response.strftime('%Y-%m-%d %H:%M') if lead.last_response else '-' }}</td></tr>
+                </table>
+                
+                {% if lead.maps_url %}
+                <a href="{{ lead.maps_url }}" target="_blank" class="btn btn-outline-primary btn-sm w-100 mb-2">
+                    <i class="bi bi-geo-alt"></i> View on Google Maps
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Update Status/Assignment -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Update Lead</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.update_lead', lead_id=lead.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="NEW" {% if lead.status.value == 'NEW' %}selected{% endif %}>NEW</option>
+                            <option value="CONTACTED" {% if lead.status.value == 'CONTACTED' %}selected{% endif %}>CONTACTED</option>
+                            <option value="REPLIED" {% if lead.status.value == 'REPLIED' %}selected{% endif %}>REPLIED</option>
+                            <option value="CLOSED" {% if lead.status.value == 'CLOSED' %}selected{% endif %}>CLOSED</option>
+                            <option value="LOST" {% if lead.status.value == 'LOST' %}selected{% endif %}>LOST</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Assigned To</label>
+                        <select name="assigned_to" class="form-select">
+                            <option value="none">Unassigned</option>
+                            {% for user in users %}
+                            <option value="{{ user.id }}" {% if lead.assigned_to == user.id %}selected{% endif %}>{{ user.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Next Follow-up</label>
+                        <input type="datetime-local" name="next_followup" class="form-control" 
+                               value="{{ lead.next_followup.strftime('%Y-%m-%dT%H:%M') if lead.next_followup else '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="3">{{ lead.notes or '' }}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Update</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Sequence Enrollment -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Automation Sequence</h6>
+            </div>
+            <div class="card-body">
+                {% if lead.sequence %}
+                <div class="alert alert-info">
+                    <strong>Enrolled in:</strong> {{ lead.sequence.name }}<br>
+                    <small>Step {{ lead.sequence_step }} of {{ lead.sequence.steps.count() }}</small>
+                </div>
+                <form method="POST" action="{{ url_for('main.enroll_sequence', lead_id=lead.id) }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">Remove from Sequence</button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('main.enroll_sequence', lead_id=lead.id) }}">
+                    <select name="sequence_id" class="form-select mb-2">
+                        <option value="">Select a sequence...</option>
+                        {% for seq in sequences %}
+                        <option value="{{ seq.id }}">{{ seq.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-outline-primary btn-sm w-100">Enroll in Sequence</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Contact Column -->
+    <div class="col-md-8">
+        <!-- Quick Contact -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Send Message</h6>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#whatsapp-tab">
+                            <i class="bi bi-whatsapp"></i> WhatsApp
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#email-tab">
+                            <i class="bi bi-envelope"></i> Email
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#sms-tab">
+                            <i class="bi bi-chat-dots"></i> SMS
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content">
+                    <!-- WhatsApp Tab -->
+                    <div class="tab-pane fade show active" id="whatsapp-tab">
+                        <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="channel" value="whatsapp">
+                            <div class="mb-3">
+                                <label class="form-label">Template</label>
+                                <select name="template_id" class="form-select template-select" data-target="whatsapp-message">
+                                    <option value="">Custom message...</option>
+                                    {% for t in templates if t.channel.value == 'whatsapp' %}
+                                    <option value="{{ t.id }}" data-content="{{ t.content }}">{{ t.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Message</label>
+                                <textarea name="message" class="form-control" rows="4" id="whatsapp-message">{{ lead.first_message or '' }}</textarea>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn wa-btn">
+                                    <i class="bi bi-send"></i> Send via API
+                                </button>
+                                {% if lead.whatsapp_link %}
+                                <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-outline-success">
+                                    <i class="bi bi-box-arrow-up-right"></i> Open WhatsApp
+                                </a>
+                                {% endif %}
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Email Tab -->
+                    <div class="tab-pane fade" id="email-tab">
+                        <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="channel" value="email">
+                            <div class="mb-3">
+                                <label class="form-label">Template</label>
+                                <select name="template_id" class="form-select template-select" data-target="email-message" data-subject="email-subject">
+                                    <option value="">Custom message...</option>
+                                    {% for t in templates if t.channel.value == 'email' %}
+                                    <option value="{{ t.id }}" data-content="{{ t.content }}" data-subject="{{ t.subject }}">{{ t.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Subject</label>
+                                <input type="text" name="subject" class="form-control" id="email-subject">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Message</label>
+                                <textarea name="message" class="form-control" rows="4" id="email-message"></textarea>
+                            </div>
+                            <button type="submit" class="btn email-btn">
+                                <i class="bi bi-send"></i> Send Email
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- SMS Tab -->
+                    <div class="tab-pane fade" id="sms-tab">
+                        <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="channel" value="sms">
+                            <div class="mb-3">
+                                <label class="form-label">Message (160 chars)</label>
+                                <textarea name="message" class="form-control" rows="3" maxlength="160"></textarea>
+                            </div>
+                            <button type="submit" class="btn sms-btn">
+                                <i class="bi bi-send"></i> Send SMS
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Record Response -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Record Response</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.record_response', lead_id=lead.id) }}" class="row g-2">
+                    <div class="col-md-3">
+                        <select name="channel" class="form-select">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                            <option value="phone">Phone</option>
+                        </select>
+                    </div>
+                    <div class="col-md-7">
+                        <input type="text" name="response_content" class="form-control" placeholder="Response summary (optional)">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100">Record</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Contact History -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Contact History</h6>
+            </div>
+            <div class="card-body">
+                {% if contact_logs %}
+                <div class="list-group list-group-flush">
+                    {% for log in contact_logs %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <span class="badge {% if log.channel.value == 'whatsapp' %}bg-success{% elif log.channel.value == 'email' %}bg-danger{% else %}bg-primary{% endif %}">
+                                    {{ log.channel.value|upper }}
+                                </span>
+                                {% if log.is_automated %}
+                                <span class="badge bg-secondary">Auto</span>
+                                {% endif %}
+                                {% if log.user %}
+                                <small class="text-muted">by {{ log.user.username }}</small>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">{{ log.sent_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                        </div>
+                        <p class="mb-1 mt-2">{{ log.message_content[:200] }}{% if log.message_content|length > 200 %}...{% endif %}</p>
+                        <div class="small">
+                            {% if log.delivered_at %}
+                            <span class="text-success"><i class="bi bi-check2"></i> Delivered</span>
+                            {% endif %}
+                            {% if log.read_at %}
+                            <span class="text-primary"><i class="bi bi-check2-all"></i> Read</span>
+                            {% endif %}
+                            {% if log.responded_at %}
+                            <span class="text-warning"><i class="bi bi-reply"></i> Responded</span>
+                            {% if log.response_content %}
+                            <br><em>"{{ log.response_content }}"</em>
+                            {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center mb-0">No contact history yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.template-select').forEach(select => {
+    select.addEventListener('change', function() {
+        const option = this.options[this.selectedIndex];
+        const content = option.dataset.content || '';
+        const subject = option.dataset.subject || '';
+        
+        const targetId = this.dataset.target;
+        if (targetId) {
+            document.getElementById(targetId).value = content
+                .replace(/{business_name}/g, '{{ lead.name }}')
+                .replace(/{city}/g, '{{ lead.city }}')
+                .replace(/{rating}/g, '{{ lead.rating }}');
+        }
+        
+        const subjectId = this.dataset.subject;
+        if (subjectId && subject) {
+            document.getElementById(subjectId).value = subject
+                .replace(/{business_name}/g, '{{ lead.name }}');
+        }
+    });
+});
+</script>
+{% endblock %}
