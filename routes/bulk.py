@@ -153,11 +153,27 @@ def bulk_send():
     
     # Get templates
     templates = MessageTemplate.query.filter_by(is_active=True).all()
-    default_whatsapp_template = MessageTemplate.query.filter_by(
-        channel=ContactChannel.WHATSAPP,
-        is_default=True,
-        is_active=True
-    ).first()
+
+    def _default_for(channel_enum: ContactChannel, preferred_language: str = 'sq'):
+        t = MessageTemplate.query.filter_by(
+            channel=channel_enum,
+            language=preferred_language,
+            is_default=True,
+            is_active=True
+        ).first()
+        if t:
+            return t
+        return MessageTemplate.query.filter_by(
+            channel=channel_enum,
+            is_default=True,
+            is_active=True
+        ).first()
+
+    default_templates = {
+        'whatsapp': _default_for(ContactChannel.WHATSAPP),
+        'email': _default_for(ContactChannel.EMAIL),
+        'sms': _default_for(ContactChannel.SMS),
+    }
     
     # Group leads by temperature
     hot_leads = [l for l in leads if l.temperature == LeadTemperature.HOT]
@@ -171,7 +187,9 @@ def bulk_send():
         warm_leads=warm_leads,
         cold_leads=cold_leads,
         templates=templates,
-        default_whatsapp_template_id=default_whatsapp_template.id if default_whatsapp_template else None
+        default_template_ids={
+            k: (v.id if v else None) for k, v in default_templates.items()
+        }
     )
 
 

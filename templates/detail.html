@@ -151,7 +151,7 @@
                                 <select name="template_id" class="form-select template-select" data-target="whatsapp-message">
                                     <option value="">Custom message...</option>
                                     {% for t in templates if t.channel.value == 'whatsapp' %}
-                                    <option value="{{ t.id }}" data-content="{{ t.content }}">{{ t.name }}</option>
+                                    <option value="{{ t.id }}" data-content="{{ t.content }}" {% if t.is_default %}selected{% endif %}>{{ t.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -181,7 +181,7 @@
                                 <select name="template_id" class="form-select template-select" data-target="email-message" data-subject="email-subject">
                                     <option value="">Custom message...</option>
                                     {% for t in templates if t.channel.value == 'email' %}
-                                    <option value="{{ t.id }}" data-content="{{ t.content }}" data-subject="{{ t.subject }}">{{ t.name }}</option>
+                                    <option value="{{ t.id }}" data-content="{{ t.content }}" data-subject="{{ t.subject }}" {% if t.is_default %}selected{% endif %}>{{ t.name }}</option>
                                     {% endfor %}
                                 </select>
                             </div>
@@ -294,26 +294,33 @@
 
 {% block extra_js %}
 <script>
+function applySelectedTemplate(selectEl) {
+    const option = selectEl.options[selectEl.selectedIndex];
+    const content = option?.dataset?.content || '';
+    const subject = option?.dataset?.subject || '';
+    
+    const targetId = selectEl.dataset.target;
+    if (targetId) {
+        document.getElementById(targetId).value = content
+            .replace(/{business_name}/g, '{{ lead.name }}')
+            .replace(/{city}/g, '{{ lead.city }}')
+            .replace(/{rating}/g, '{{ lead.rating }}');
+    }
+    
+    const subjectId = selectEl.dataset.subject;
+    if (subjectId && subject) {
+        document.getElementById(subjectId).value = subject
+            .replace(/{business_name}/g, '{{ lead.name }}');
+    }
+}
+
 document.querySelectorAll('.template-select').forEach(select => {
     select.addEventListener('change', function() {
-        const option = this.options[this.selectedIndex];
-        const content = option.dataset.content || '';
-        const subject = option.dataset.subject || '';
-        
-        const targetId = this.dataset.target;
-        if (targetId) {
-            document.getElementById(targetId).value = content
-                .replace(/{business_name}/g, '{{ lead.name }}')
-                .replace(/{city}/g, '{{ lead.city }}')
-                .replace(/{rating}/g, '{{ lead.rating }}');
-        }
-        
-        const subjectId = this.dataset.subject;
-        if (subjectId && subject) {
-            document.getElementById(subjectId).value = subject
-                .replace(/{business_name}/g, '{{ lead.name }}');
-        }
+        applySelectedTemplate(this);
     });
 });
+
+// Apply defaults on initial load (if a default option is preselected)
+document.querySelectorAll('.template-select').forEach(select => applySelectedTemplate(select));
 </script>
 {% endblock %}

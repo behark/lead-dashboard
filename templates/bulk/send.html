@@ -86,7 +86,7 @@
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label">Channel</label>
-                    <select name="channel" class="form-select" form="bulkSendForm">
+                    <select name="channel" class="form-select" form="bulkSendForm" id="channelSelect">
                         <option value="whatsapp">WhatsApp</option>
                         <option value="email">Email</option>
                         <option value="sms">SMS</option>
@@ -98,7 +98,7 @@
                     <select name="template_id" class="form-select" form="bulkSendForm" id="templateSelect">
                         <option value="">Use lead's first_message</option>
                         {% for t in templates %}
-                        <option value="{{ t.id }}" data-category="{{ t.category }}" {% if default_whatsapp_template_id and t.id == default_whatsapp_template_id %}selected{% endif %}>
+                        <option value="{{ t.id }}" data-category="{{ t.category }}" data-channel="{{ t.channel.value }}">
                             {{ t.name }} ({{ t.channel.value }})
                         </option>
                         {% endfor %}
@@ -142,9 +142,41 @@
 
 {% block extra_js %}
 <script>
+const defaultTemplateIds = {{ (default_template_ids or {})|tojson }};
+
 function updateCount() {
     const checked = document.querySelectorAll('.lead-checkbox:checked').length;
     document.getElementById('selectedCount').textContent = checked + ' selected';
+}
+
+function filterTemplatesByChannel(channel) {
+    const select = document.getElementById('templateSelect');
+    const defaultId = defaultTemplateIds[channel] ? String(defaultTemplateIds[channel]) : null;
+
+    // First option is the "Use lead's first_message"
+    const options = Array.from(select.options);
+    options.forEach((opt, idx) => {
+        if (idx === 0) return;
+        const optChannel = opt.dataset.channel;
+        opt.hidden = optChannel !== channel;
+    });
+
+    // If currently selected is hidden, switch to default if available, else first visible
+    const selected = select.options[select.selectedIndex];
+    if (selected && selected.hidden) {
+        if (defaultId) {
+            const defOpt = options.find(o => o.value === defaultId && !o.hidden);
+            if (defOpt) {
+                select.value = defaultId;
+                return;
+            }
+        }
+        const firstVisible = options.find((o, idx) => idx > 0 && !o.hidden);
+        select.value = firstVisible ? firstVisible.value : '';
+    } else if (!select.value && defaultId) {
+        const defOpt = options.find(o => o.value === defaultId && !o.hidden);
+        if (defOpt) select.value = defaultId;
+    }
 }
 
 function selectByTemp(temp) {
@@ -194,5 +226,11 @@ document.querySelectorAll('tbody tr').forEach(row => {
         });
     });
 });
+
+// Initialize template filtering
+document.getElementById('channelSelect').addEventListener('change', (e) => {
+    filterTemplatesByChannel(e.target.value);
+});
+filterTemplatesByChannel(document.getElementById('channelSelect').value);
 </script>
 {% endblock %}

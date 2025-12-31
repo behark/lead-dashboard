@@ -226,15 +226,18 @@ def delete_sequence_step(sequence_id, step_id):
 def set_default_template(template_id):
     template = MessageTemplate.query.get_or_404(template_id)
     
-    # Set all templates as non-default first
-    MessageTemplate.query.update({'is_default': False})
+    # Set default per (channel, language)
+    MessageTemplate.query.filter_by(
+        channel=template.channel,
+        language=template.language
+    ).update({'is_default': False})
     
     # Set this template as default
     template.is_default = True
     
     db.session.commit()
     
-    flash(f'{template.name} set as default WhatsApp template.', 'success')
+    flash(f'{template.name} set as default for {template.channel.value.upper()} ({template.language}).', 'success')
     return redirect(url_for('templates.list_templates'))
 
 
