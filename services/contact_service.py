@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import current_app
 from models import db, Lead, ContactLog, MessageTemplate, ContactChannel, LeadStatus
 import re
+import random
 
 
 class ContactService:
@@ -217,36 +218,174 @@ class ContactService:
             return {'success': False, 'error': str(e)}
     
     @staticmethod
+    def select_template_variant(base_template_name, channel):
+        """Select the best performing variant of a template using A/B testing"""
+        # Get all variants of this template
+        variants = MessageTemplate.query.filter(
+            MessageTemplate.name.like(f"{base_template_name}%"),
+            MessageTemplate.channel == channel,
+            MessageTemplate.is_active == True
+        ).all()
+
+        if not variants:
+            return None
+
+        # If only one variant, return it
+        if len(variants) == 1:
+            return variants[0]
+
+        # Calculate performance score for each variant
+        variant_scores = []
+        for variant in variants:
+            if variant.times_sent > 0:
+                # Score based on response rate with minimum sample size
+                response_rate = variant.response_rate
+                sample_size = variant.times_sent
+
+                # Bayesian estimate with beta distribution (add pseudocounts)
+                alpha = 1 + variant.times_responded  # successes + pseudocount
+                beta = 1 + (variant.times_sent - variant.times_responded)  # failures + pseudocount
+
+                # Expected response rate
+                expected_rate = alpha / (alpha + beta)
+
+                # Adjust for sample size (prefer variants with more data)
+                confidence_adjustment = min(sample_size / 50, 1)  # Full confidence at 50 samples
+
+                score = expected_rate * confidence_adjustment
+            else:
+                score = 0.5  # Default for new variants
+
+            variant_scores.append((variant, score))
+
+        # Sort by score descending and return best
+        variant_scores.sort(key=lambda x: x[1], reverse=True)
+        return variant_scores[0][0]
+
+    @staticmethod
+    def get_personalized_template(template, lead):
+        """Get personalized template using AI or fallback to basic personalization"""
+        from services.ai_service import ai_service
+
+        # Try AI personalization first
+        ai_message = ai_service.generate_message_variation(
+            template.content,
+            {
+                'name': lead.name,
+                'city': lead.city,
+                'rating': lead.rating,
+                'category': lead.category
+            }
+        )
+
+        if ai_message:
+            # Update template content for this send
+            personalized_template = MessageTemplate(
+                name=template.name,
+                channel=template.channel,
+                language=template.language,
+                content=ai_message,
+                variant=template.variant
+            )
+            return personalized_template
+
+        # Fallback to basic personalization
+        personalized_content = ContactService.personalize_message(template.content, lead)
+        template.content = personalized_content
+        return template
+
+    @staticmethod
+    def detect_opt_out(response_content):
+        """Detect opt-out keywords in response"""
+        if not response_content:
+            return False, None
+
+        content_lower = response_content.lower().strip()
+
+        # Common opt-out keywords in Albanian and English
+        opt_out_keywords = [
+            'stop', 'unsubscribe', 'opt out', 'no more', 'remove me',
+            'ndalo', 'çregjistrohu', 'mos me shkruaj', 'hiqni mua',
+            'mos me kontaktoni', 'fshi mua', 'jo më', 'mjaft'
+        ]
+
+        for keyword in opt_out_keywords:
+            if keyword in content_lower:
+                return True, keyword
+
+        return False, None
+
+    @staticmethod
+    def process_opt_out(lead, reason=None):
+        """Process opt-out for a lead"""
+        lead.marketing_opt_out = True
+        lead.opt_out_reason = reason
+        lead.opt_out_date = datetime.now(timezone.utc)
+        lead.status = LeadStatus.LOST
+        lead.notes = (lead.notes or '') + f'\n[OPT-OUT {lead.opt_out_date.strftime("%Y-%m-%d")}] {reason or "User requested opt-out"}'
+
+        db.session.commit()
+        return True
+
+    @staticmethod
     def record_response(lead, channel, response_content=None):
         """Record a response from a lead"""
-        
+
+        # Check for opt-out first
+        is_opt_out, opt_out_keyword = ContactService.detect_opt_out(response_content)
+        if is_opt_out:
+            ContactService.process_opt_out(lead, f"Detected opt-out keyword: '{opt_out_keyword}'")
+            return True
+
         # Find the last contact log for this lead and channel
         log = ContactLog.query.filter_by(
             lead_id=lead.id,
             channel=channel
         ).order_by(ContactLog.sent_at.desc()).first()
-        
+
         if log:
             log.responded_at = datetime.now(timezone.utc)
             log.response_content = response_content
-            
+
             # Update template stats
             if log.message_template_id:
                 template = MessageTemplate.query.get(log.message_template_id)
                 if template:
                     template.times_responded += 1
-        
+
         # Update lead
         lead.last_response = datetime.now(timezone.utc)
         lead.status = LeadStatus.REPLIED
         lead.engagement_count = (lead.engagement_count or 0) + 1
-        
+
         # Calculate response time
         if lead.last_contacted:
             diff = datetime.now(timezone.utc) - lead.last_contacted
             lead.response_time_hours = diff.total_seconds() / 3600
-        
+
         lead.calculate_score()
         db.session.commit()
-        
+
         return True
+
+    @staticmethod
+    def can_contact_lead(lead, channel):
+        """Check if we can legally contact this lead"""
+        if not lead:
+            return False
+
+        # Check GDPR consent
+        if not lead.gdpr_consent:
+            return False
+
+        # Check marketing opt-out
+        if lead.marketing_opt_out:
+            return False
+
+        # Check if lead has valid contact info for the channel
+        if channel == 'whatsapp' or channel == 'sms':
+            return bool(lead.phone)
+        elif channel == 'email':
+            return bool(lead.email)
+
+        return False

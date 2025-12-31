@@ -266,9 +266,27 @@
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
+                            <!-- Enhanced WhatsApp with template selection -->
+                            <div class="dropdown">
+                                <button class="btn wa-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Send via WhatsApp">
+                                    <i class="bi bi-whatsapp"></i> <i class="bi bi-chevron-down"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><h6 class="dropdown-header">Select Template:</h6></li>
+                                    <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, null)">
+                                        <i class="bi bi-pencil"></i> Custom Message
+                                    </a></li>
+                                    {% for t in templates if t.channel.value == 'whatsapp' %}
+                                    <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, {{ t.id }})">
+                                        <i class="bi bi-file-text"></i> {{ t.name }}
+                                    </a></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <!-- Original WhatsApp Web link -->
                             {% if lead.whatsapp_link %}
-                            <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn wa-btn" title="WhatsApp">
-                                <i class="bi bi-whatsapp"></i>
+                            <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-outline-success" title="Open WhatsApp Web">
+                                <i class="bi bi-box-arrow-up-right"></i>
                             </a>
                             {% endif %}
                             <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}" class="btn btn-outline-secondary" title="View">
@@ -328,5 +346,35 @@ document.getElementById('bulkAction').addEventListener('change', function() {
     document.getElementById('statusSelect').classList.toggle('d-none', this.value !== 'status');
     document.getElementById('sequenceSelect').classList.toggle('d-none', this.value !== 'enroll_sequence');
 });
+
+// Quick WhatsApp send function
+function quickSendWhatsApp(leadId, templateId) {
+    if (templateId === null) {
+        // Custom message - redirect to lead detail with WhatsApp tab active
+        window.location.href = `/lead/${leadId}#whatsapp-tab`;
+    } else {
+        // Send with template directly
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/lead/${leadId}/contact`;
+        form.style.display = 'none';
+        
+        const channelInput = document.createElement('input');
+        channelInput.type = 'hidden';
+        channelInput.name = 'channel';
+        channelInput.value = 'whatsapp';
+        form.appendChild(channelInput);
+        
+        const templateInput = document.createElement('input');
+        templateInput.type = 'hidden';
+        templateInput.name = 'template_id';
+        templateInput.value = templateId;
+        form.appendChild(templateInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    }
+}
 </script>
 {% endblock %}

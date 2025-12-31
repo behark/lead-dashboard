@@ -53,44 +53,63 @@ def bulk_send():
             if i > 0 and i % MESSAGES_PER_BATCH == 0:
                 if not dry_run:
                     time.sleep(DELAY_BETWEEN_MESSAGES * 10)  # Longer pause between batches
-            
+
             # Validate phone
             is_valid, error = validate_phone(lead.phone, lead.country)
             if not is_valid:
                 results['skipped'] += 1
                 results['errors'].append(f"{lead.name}: {error}")
                 continue
-            
-            # Get message
+
+            # Select best performing template variant (A/B testing)
+            selected_template = template
             if template:
-                message = ContactService.personalize_message(template.content, lead)
+                # Try to find the best variant
+                base_name = template.name.split(' - ')[0]  # Remove variant suffix
+                best_variant = ContactService.select_template_variant(base_name, ContactChannel.WHATSAPP if channel == 'whatsapp' else ContactChannel.EMAIL if channel == 'email' else ContactChannel.SMS)
+                if best_variant:
+                    selected_template = best_variant
+
+                # Apply AI personalization
+                selected_template = ContactService.get_personalized_template(selected_template, lead)
+
+            # Get message
+            if selected_template:
+                message = selected_template.content
+                template_id_to_use = selected_template.id
+                ab_variant = selected_template.variant
             else:
                 message = lead.first_message or f"Hi! I saw {lead.name} on Google and wanted to reach out."
-            
+                template_id_to_use = template_id
+                ab_variant = None
+
             if dry_run:
                 results['sent'] += 1
                 continue
-            
+
             # Send based on channel
             result = None
             if channel == 'whatsapp':
                 result = ContactService.send_whatsapp(
                     lead, message,
-                    template_id=template_id,
-                    user_id=current_user.id
+                    template_id=template_id_to_use,
+                    user_id=current_user.id,
+                    ab_variant=ab_variant
                 )
             elif channel == 'email':
-                subject = template.subject if template and template.subject else f"Hello from a business partner"
+                subject = selected_template.subject if selected_template and hasattr(selected_template, 'subject') and selected_template.subject else f"Hello from a business partner"
                 result = ContactService.send_email(
                     lead, subject, message,
-                    template_id=template_id,
-                    user_id=current_user.id
+                    template_id=template_id_to_use,
+                    user_id=current_user.id,
+                    ab_variant=ab_variant
                 )
             elif channel == 'sms':
                 result = ContactService.send_sms(
                     lead, message,
-                    template_id=template_id,
-                    user_id=current_user.id
+                    template_id=template_id_to_use,
+                    user_id=current_user.id,
+                    ab_variant=ab_variant
                 )
             
             if result and result.get('success'):
@@ -113,11 +132,13 @@ def bulk_send():
         return render_template('bulk/results.html', results=results)
     
     # GET - Show selection page
-    # Get leads that can be contacted
+    # Get leads that can be contacted (not opted out, have consent)
     leads = Lead.query.filter(
         Lead.status.in_([LeadStatus.NEW]),
         Lead.phone.isnot(None),
-        Lead.phone != ''
+        Lead.phone != '',
+        Lead.marketing_opt_out == False,
+        Lead.gdpr_consent == True
     ).order_by(Lead.lead_score.desc()).limit(500).all()
     
     # Get templates

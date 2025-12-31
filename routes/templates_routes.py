@@ -221,6 +221,23 @@ def delete_sequence_step(sequence_id, step_id):
     return redirect(url_for('templates.edit_sequence', sequence_id=sequence_id))
 
 
+@templates_bp.route('/<int:template_id>/set_default', methods=['POST'])
+@login_required
+def set_default_template(template_id):
+    template = MessageTemplate.query.get_or_404(template_id)
+    
+    # Set all templates as non-default first
+    MessageTemplate.query.update({'is_default': False})
+    
+    # Set this template as default
+    template.is_default = True
+    
+    db.session.commit()
+    
+    flash(f'{template.name} set as default WhatsApp template.', 'success')
+    return redirect(url_for('templates.list_templates'))
+
+
 @templates_bp.route('/sequences/<int:sequence_id>/delete', methods=['POST'])
 @login_required
 def delete_sequence(sequence_id):

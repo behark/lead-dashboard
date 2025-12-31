@@ -111,6 +111,13 @@ def register_cli(app):
         from services.scoring_service import ScoringService
         count = ScoringService.recalculate_all_scores()
         click.echo(f'Recalculated scores for {count} leads.')
+
+    @app.cli.command('update-analytics')
+    def update_analytics():
+        """Update analytics with enhanced metrics."""
+        from services.analytics_service import AnalyticsService
+        AnalyticsService.update_daily_analytics()
+        click.echo('Analytics updated with conversion funnel and compliance metrics.')
     
     @app.cli.command('create-default-templates')
     def create_default_templates():
@@ -119,41 +126,64 @@ def register_cli(app):
         
         templates = [
             {
-                'name': 'Initial WhatsApp - Albanian',
-                'channel': ContactChannel.WHATSAPP,
-                'language': 'sq',
-                'content': '''Pershendetje 👋
-
-Pashe *{business_name}* ne Google - vleresim te shkelqyer!
-
-Keni uebsajt? Kam nje ide si mund te sillni me shume kliente.
-
-2 min bisede?''',
-                'variant': 'A'
-            },
-            {
-                'name': 'Initial WhatsApp - Albanian B',
+                'name': 'Initial WhatsApp - Urgency Focus',
                 'channel': ContactChannel.WHATSAPP,
                 'language': 'sq',
                 'content': '''Pershendetje {business_name}! 👋
 
-Jam duke kerkuar biznese ne {city} dhe ju dallet.
+Shoh që nuk keni uebsajt dhe humbisni klientë çdo ditë.
 
-A keni interes per nje uebsajt profesional qe sjell kliente te rinj?
+Kam një ofertë speciale sot: uebsajt profesional për vetëm 299€ (zakonisht 499€).
 
-Mund te flasim per 2 min?''',
+Interesuar për një takim 10-minutësh? Mund të fillojmë nesër!
+
+Shiko shembujt këtu: [link]''',
+                'variant': 'A'
+            },
+            {
+                'name': 'Initial WhatsApp - Social Proof',
+                'channel': ContactChannel.WHATSAPP,
+                'language': 'sq',
+                'content': '''Pershendetje {business_name}! 🙌
+
+3 biznese si juaji javën e kaluar morën uebsajt dhe thanë: "Pse nuk e bëra më herët?"
+
+Klientët ju gjejnë në Google, ju kontaktojnë 24/7, dhe ju merrni më shumë thirrje.
+
+Çmimi: 299€ për paketën bazike.
+
+Doni të shihni se si duket për biznesin tuaj?''',
                 'variant': 'B'
             },
             {
-                'name': 'Follow-up WhatsApp',
+                'name': 'Follow-up Day 1 - Value Reminder',
                 'channel': ContactChannel.WHATSAPP,
                 'language': 'sq',
-                'content': '''Pershendetje perseri! 👋
+                'content': '''Përshëndetje {business_name}! 👋
 
-Ju kontaktova disa dite me pare per uebsajtin.
+Vetëm po ju kujtoj për uebsajtin - klientët tuaj po kërkojnë në Google por nuk ju gjejnë.
 
-Ende i interesuar? Kam nje oferte speciale kete jave.''',
+Oferta ime: uebsajt i gatshëm brenda 5 ditëve, me optimizim për Google.
+
+A keni 5 minuta për të folur sot?
+
+[Link për shembuj]''',
                 'variant': 'A'
+            },
+            {
+                'name': 'Follow-up Day 3 - Scarcity',
+                'channel': ContactChannel.WHATSAPP,
+                'language': 'sq',
+                'content': '''Përshëndetje {business_name}!
+
+Oferta ime speciale mbaron sot - uebsajt për 299€ (nga 499€).
+
+Kam vetëm 2 vende të lira këtë javë për projekte të reja.
+
+Interesuar? Mund të fillojmë menjëherë me logon dhe fotot tuaja.
+
+Shkruani "PO" nëse doni të vazhdojmë! ✅''',
+                'variant': 'B'
             },
             {
                 'name': 'Initial Email - Albanian',

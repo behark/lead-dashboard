@@ -164,18 +164,64 @@ def seed_demo_data():
     # Create demo templates
     templates = [
         {
-            'name': 'Initial WhatsApp - Albanian',
+            'name': 'Initial WhatsApp - Urgency Focus',
             'channel': ContactChannel.WHATSAPP,
             'language': 'sq',
-            'content': 'Pershendetje 👋\n\nPashe {business_name} ne Google - shkelqyeshem!\n\nKeni uebsajt? Kam nje ide si mund te sillni me shume kliente.\n\n2 min bisede?',
+            'content': '''Pershendetje {business_name}! 👋
+
+Shoh që nuk keni uebsajt dhe humbisni klientë çdo ditë.
+
+Kam një ofertë speciale sot: uebsajt profesional për vetëm 299€ (zakonisht 499€).
+
+Interesuar për një takim 10-minutësh? Mund të fillojmë nesër!
+
+Shiko shembujt këtu: [link]''',
             'variant': 'A'
         },
         {
-            'name': 'Follow-up Day 1',
+            'name': 'Initial WhatsApp - Social Proof',
             'channel': ContactChannel.WHATSAPP,
-            'language': 'sq', 
-            'content': 'Pershendetje 👋\n\nPo ndjek mesazhin tim per {business_name}.\n\nPa presion - thjesht doja te shoh nese jeni te interesuar?\n\nGjithe te mirat!',
+            'language': 'sq',
+            'content': '''Pershendetje {business_name}! 🙌
+
+3 biznese si juaji javën e kaluar morën uebsajt dhe thanë: "Pse nuk e bëra më herët?"
+
+Klientët ju gjejnë në Google, ju kontaktojnë 24/7, dhe ju merrni më shumë thirrje.
+
+Çmimi: 299€ për paketën bazike.
+
+Doni të shihni se si duket për biznesin tuaj?''',
+            'variant': 'B'
+        },
+        {
+            'name': 'Follow-up Day 1 - Value Reminder',
+            'channel': ContactChannel.WHATSAPP,
+            'language': 'sq',
+            'content': '''Përshëndetje {business_name}! 👋
+
+Vetëm po ju kujtoj për uebsajtin - klientët tuaj po kërkojnë në Google por nuk ju gjejnë.
+
+Oferta ime: uebsajt i gatshëm brenda 5 ditëve, me optimizim për Google.
+
+A keni 5 minuta për të folur sot?
+
+[Link për shembuj]''',
             'variant': 'A'
+        },
+        {
+            'name': 'Follow-up Day 3 - Scarcity',
+            'channel': ContactChannel.WHATSAPP,
+            'language': 'sq',
+            'content': '''Përshëndetje {business_name}!
+
+Oferta ime speciale mbaron sot - uebsajt për 299€ (nga 499€).
+
+Kam vetëm 2 vende të lira këtë javë për projekte të reja.
+
+Interesuar? Mund të fillojmë menjëherë me logon dhe fotot tuaja.
+
+Shkruani "PO" nëse doni të vazhdojmë! ✅''',
+            'variant': 'B'
         }
     ]
     

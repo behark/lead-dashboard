@@ -253,35 +253,35 @@ class AnalyticsService:
     @staticmethod
     def record_daily_analytics():
         """Record daily analytics snapshot"""
-        
+
         today = date.today()
-        
+
         # Check if already recorded
         existing = Analytics.query.filter_by(date=today).first()
         if existing:
             analytics = existing
         else:
             analytics = Analytics(date=today)
-        
+
         # Get today's data
         today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
         today_end = today_start + timedelta(days=1)
-        
+
         analytics.leads_created = Lead.query.filter(
             Lead.created_at >= today_start,
             Lead.created_at < today_end
         ).count()
-        
+
         analytics.contacts_made = ContactLog.query.filter(
             ContactLog.sent_at >= today_start,
             ContactLog.sent_at < today_end
         ).count()
-        
+
         analytics.responses_received = ContactLog.query.filter(
             ContactLog.responded_at >= today_start,
             ContactLog.responded_at < today_end
         ).count()
-        
+
         # By channel
         for channel in ContactChannel:
             sent = ContactLog.query.filter(
@@ -289,13 +289,13 @@ class AnalyticsService:
                 ContactLog.sent_at >= today_start,
                 ContactLog.sent_at < today_end
             ).count()
-            
+
             responded = ContactLog.query.filter(
                 ContactLog.channel == channel,
                 ContactLog.responded_at >= today_start,
                 ContactLog.responded_at < today_end
             ).count()
-            
+
             if channel == ContactChannel.WHATSAPP:
                 analytics.whatsapp_sent = sent
                 analytics.whatsapp_responses = responded
@@ -305,11 +305,96 @@ class AnalyticsService:
             elif channel == ContactChannel.SMS:
                 analytics.sms_sent = sent
                 analytics.sms_responses = responded
-        
+
+        # Enhanced metrics
+        AnalyticsService.update_enhanced_metrics(analytics)
+
         db.session.add(analytics)
         db.session.commit()
-        
+
         return analytics
+
+    @staticmethod
+    def update_enhanced_metrics(analytics):
+        """Update enhanced analytics metrics for the given analytics record"""
+
+        # Calculate conversion rates
+        total_contacts = analytics.contacts_made
+        total_responses = analytics.responses_received
+        total_closed = analytics.deals_closed
+
+        analytics.contacted_to_responded_rate = (total_responses / total_contacts * 100) if total_contacts > 0 else 0
+        analytics.responded_to_closed_rate = (total_closed / total_responses * 100) if total_responses > 0 else 0
+
+        # Overall conversion rate (leads created to closed deals)
+        leads_created_today = analytics.leads_created
+        analytics.overall_conversion_rate = (total_closed / leads_created_today * 100) if leads_created_today > 0 else 0
+
+        # Best performing template
+        from models import MessageTemplate
+        best_template = MessageTemplate.query.filter(
+            MessageTemplate.times_sent > 0
+        ).order_by(MessageTemplate.response_rate.desc()).first()
+
+        if best_template:
+            analytics.best_template_id = best_template.id
+            analytics.best_template_response_rate = best_template.response_rate
+
+        # Lead quality metrics
+        today_start = datetime.combine(analytics.date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        today_end = today_start + timedelta(days=1)
+
+        leads_today = Lead.query.filter(
+            Lead.created_at >= today_start,
+            Lead.created_at < today_end
+        ).all()
+
+        if leads_today:
+            analytics.avg_lead_score = sum(lead.lead_score for lead in leads_today) / len(leads_today)
+            analytics.hot_leads_count = sum(1 for lead in leads_today if lead.temperature == LeadTemperature.HOT)
+            analytics.warm_leads_count = sum(1 for lead in leads_today if lead.temperature == LeadTemperature.WARM)
+            analytics.cold_leads_count = sum(1 for lead in leads_today if lead.temperature == LeadTemperature.COLD)
+
+        # Compliance metrics
+        analytics.opt_outs_count = Lead.query.filter(
+            Lead.opt_out_date >= today_start,
+            Lead.opt_out_date < today_end
+        ).count()
+
+        # A/B testing results
+        ab_results = AnalyticsService.get_ab_test_results()
+        if ab_results:
+            # Find the best performing variant overall
+            best_variant = None
+            best_rate = 0
+            improvement = 0
+
+            for category, result in ab_results.items():
+                winner_rate = result['winner_rate']
+                if winner_rate > best_rate:
+                    best_rate = winner_rate
+                    best_variant = result['winner']
+                    # Calculate improvement over average
+                    avg_rate = sum(v['response_rate'] for v in result['variants']) / len(result['variants'])
+                    improvement = ((winner_rate - avg_rate) / avg_rate * 100) if avg_rate > 0 else 0
+
+            analytics.ab_test_winner_variant = best_variant
+            analytics.ab_test_improvement_rate = improvement
+
+    @staticmethod
+    def update_daily_analytics():
+        """Update analytics for today with enhanced metrics"""
+        today = date.today()
+        analytics = AnalyticsService.record_daily_analytics()
+
+        # Also update the last 30 days to ensure historical data has enhanced metrics
+        for days_back in range(1, 31):
+            past_date = today - timedelta(days=days_back)
+            past_analytics = Analytics.query.filter_by(date=past_date).first()
+            if past_analytics:
+                AnalyticsService.update_enhanced_metrics(past_analytics)
+
+        db.session.commit()
     
     @staticmethod
     def get_trend_data(days=30):

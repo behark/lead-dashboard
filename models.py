@@ -90,6 +90,12 @@ class Lead(db.Model):
     # Status tracking
     status = db.Column(db.Enum(LeadStatus), default=LeadStatus.NEW, index=True)
     notes = db.Column(db.Text)
+
+    # Compliance and opt-out
+    gdpr_consent = db.Column(db.Boolean, default=True)
+    marketing_opt_out = db.Column(db.Boolean, default=False)
+    opt_out_reason = db.Column(db.String(200))
+    opt_out_date = db.Column(db.DateTime)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
@@ -111,24 +117,32 @@ class Lead(db.Model):
     has_website = db.Column(db.Boolean, default=False)
     response_time_hours = db.Column(db.Float)
     engagement_count = db.Column(db.Integer, default=0)
+
+    # Enhanced scoring factors
+    business_size_indicator = db.Column(db.String(20))  # small, medium, large
+    online_presence_score = db.Column(db.Integer, default=0)  # 0-100
+    competitor_count = db.Column(db.Integer, default=0)
+    market_demand_score = db.Column(db.Integer, default=50)  # 0-100
+    location_advantage = db.Column(db.Float, default=1.0)  # multiplier
+    industry_growth_rate = db.Column(db.Float, default=0.0)
     
     def calculate_score(self):
-        """Dynamic lead scoring based on multiple factors"""
+        """Enhanced lead scoring with ML-like factors"""
         score = 50  # Base score
-        
+
         # Rating factor (0-20 points)
         if self.rating:
             score += min(int(self.rating * 4), 20)
-        
-        # Has website (deduct points - they might not need one)
+
+        # Has website factor (negative for prospects who need websites)
         if self.has_website:
             score -= 10
         else:
             score += 15
-        
+
         # Engagement factor (0-20 points)
         score += min(self.engagement_count * 5, 20)
-        
+
         # Response time factor
         if self.response_time_hours:
             if self.response_time_hours < 1:
@@ -137,7 +151,35 @@ class Lead(db.Model):
                 score += 10
             elif self.response_time_hours < 72:
                 score += 5
-        
+
+        # Business size advantage
+        if self.business_size_indicator == 'small':
+            score += 10  # Small businesses are easier to work with
+        elif self.business_size_indicator == 'large':
+            score += 5   # Large businesses have bigger budgets
+
+        # Online presence score (lower is better for prospects)
+        if self.online_presence_score < 30:
+            score += 15  # Poor online presence = high need
+        elif self.online_presence_score < 60:
+            score += 5
+
+        # Market demand factor
+        score += int((self.market_demand_score - 50) * 0.3)  # -15 to +15
+
+        # Location advantage multiplier
+        score = int(score * self.location_advantage)
+
+        # Industry growth factor
+        growth_bonus = int(self.industry_growth_rate * 10)  # 0-20 points
+        score += min(growth_bonus, 20)
+
+        # Competitor analysis (fewer competitors = better opportunity)
+        if self.competitor_count < 3:
+            score += 10
+        elif self.competitor_count < 10:
+            score += 5
+
         # Decay based on days since creation without contact
         if self.status == LeadStatus.NEW and self.created_at:
             created = self.created_at
@@ -145,7 +187,7 @@ class Lead(db.Model):
                 created = created.replace(tzinfo=timezone.utc)
             days_old = (datetime.now(timezone.utc) - created).days
             score -= min(days_old * 2, 30)
-        
+
         self.lead_score = max(0, min(100, score))
         self.update_temperature()
         return self.lead_score
@@ -211,6 +253,7 @@ class MessageTemplate(db.Model):
     times_responded = db.Column(db.Integer, default=0)
     
     is_active = db.Column(db.Boolean, default=True)
+    is_default = db.Column(db.Boolean, default=False)  # For default WhatsApp template
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     @property
@@ -257,20 +300,20 @@ class SequenceStep(db.Model):
 
 class Analytics(db.Model):
     __tablename__ = 'analytics'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False, index=True)
-    
+
     # Daily metrics
     leads_created = db.Column(db.Integer, default=0)
     contacts_made = db.Column(db.Integer, default=0)
     responses_received = db.Column(db.Integer, default=0)
     deals_closed = db.Column(db.Integer, default=0)
     deals_lost = db.Column(db.Integer, default=0)
-    
+
     # Revenue
     revenue = db.Column(db.Float, default=0)
-    
+
     # By channel
     whatsapp_sent = db.Column(db.Integer, default=0)
     whatsapp_responses = db.Column(db.Integer, default=0)
@@ -278,7 +321,30 @@ class Analytics(db.Model):
     email_responses = db.Column(db.Integer, default=0)
     sms_sent = db.Column(db.Integer, default=0)
     sms_responses = db.Column(db.Integer, default=0)
-    
+
     # Best performing
     best_hour = db.Column(db.Integer)  # 0-23
     best_day = db.Column(db.Integer)  # 0-6 (Monday-Sunday)
+
+    # Conversion funnel metrics
+    contacted_to_responded_rate = db.Column(db.Float, default=0)  # contacts -> responses
+    responded_to_closed_rate = db.Column(db.Float, default=0)    # responses -> closed deals
+    overall_conversion_rate = db.Column(db.Float, default=0)     # leads created -> closed deals
+
+    # Template performance
+    best_template_id = db.Column(db.Integer, db.ForeignKey('message_templates.id'))
+    best_template_response_rate = db.Column(db.Float, default=0)
+
+    # Lead quality metrics
+    avg_lead_score = db.Column(db.Float, default=0)
+    hot_leads_count = db.Column(db.Integer, default=0)
+    warm_leads_count = db.Column(db.Integer, default=0)
+    cold_leads_count = db.Column(db.Integer, default=0)
+
+    # Compliance metrics
+    opt_outs_count = db.Column(db.Integer, default=0)
+    gdpr_complaints = db.Column(db.Integer, default=0)
+
+    # A/B testing results
+    ab_test_winner_variant = db.Column(db.String(10))
+    ab_test_improvement_rate = db.Column(db.Float, default=0)

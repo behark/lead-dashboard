@@ -53,6 +53,11 @@
                 <form method="POST" action="{{ url_for('templates.duplicate_template', template_id=template.id) }}">
                     <button type="submit" class="btn btn-sm btn-outline-secondary">Duplicate (A/B)</button>
                 </form>
+                <form method="POST" action="{{ url_for('templates.set_default_template', template_id=template.id) }}" class="ms-auto">
+                    <button type="submit" class="btn btn-sm {% if template.is_default %}btn-success{% else %}btn-outline-info{% endif %}" title="Set as default WhatsApp template">
+                        {% if template.is_default %}<i class="bi bi-check-circle"></i> Default{% else %}<i class="bi bi-star"></i> Set Default
+                    </button>
+                </form>
             </div>
         </div>
     </div>
