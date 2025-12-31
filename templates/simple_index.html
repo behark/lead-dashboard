@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lead Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="card">
+            <div class="card-body text-center">
+                <h2>Welcome, {{ user.username }}!</h2>
+                <p class="text-muted">Lead Dashboard is deployed successfully.</p>
+                <hr>
+                <p>For full functionality, run locally:</p>
+                <pre class="bg-dark text-light p-3 rounded">cd lead_dashboard
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+flask run</pre>
+                <a href="/logout" class="btn btn-outline-secondary mt-3">Logout</a>
+                <a href="/portfolio" class="btn btn-primary mt-3">View Portfolio</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
