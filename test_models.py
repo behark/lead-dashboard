@@ -4,8 +4,10 @@ Quick test to find valid GooseAI models
 import requests
 import os
 
-def test_models():
-    api_key = "sk-R2q7k7e8daaPYerM63O5wzfNRz74V8E5EPLWtabsNsDUHwtv"
+def main():
+    api_key = os.getenv("GOOSEAI_API_KEY")
+    if not api_key:
+        raise SystemExit("Missing GOOSEAI_API_KEY env var")
     
     headers = {
         'Authorization': f'Bearer {api_key}'
@@ -52,4 +54,4 @@ def test_models():
         print("---")
 
 if __name__ == '__main__':
-    test_models()
+    main()
