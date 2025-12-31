@@ -36,12 +36,14 @@ def create_app():
     from routes.analytics import analytics_bp
     from routes.templates_routes import templates_bp
     from routes.bulk import bulk_bp
+    from routes.api_templates import api_templates_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(templates_bp)
     app.register_blueprint(bulk_bp)
+    app.register_blueprint(api_templates_bp)
     
     @app.route('/portfolio')
     def portfolio():

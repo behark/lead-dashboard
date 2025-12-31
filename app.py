@@ -29,6 +29,7 @@ def create_app(config_name='default'):
     from routes.templates_routes import templates_bp
     from routes.webhooks import webhooks_bp
     from routes.bulk import bulk_bp
+    from routes.api_templates import api_templates_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -36,6 +37,7 @@ def create_app(config_name='default'):
     app.register_blueprint(templates_bp)
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(bulk_bp)
+    app.register_blueprint(api_templates_bp)
     
     # Portfolio page (public, no login required)
     @app.route('/portfolio')

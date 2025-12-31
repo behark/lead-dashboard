@@ -35,10 +35,20 @@ def bulk_send():
         # Get leads
         leads = Lead.query.filter(Lead.id.in_(lead_ids)).all()
         
-        # Get template
+        # Get template (fallback to default for channel)
         template = None
         if template_id:
             template = MessageTemplate.query.get(template_id)
+        else:
+            try:
+                channel_enum = ContactChannel(channel)
+            except ValueError:
+                channel_enum = ContactChannel.WHATSAPP
+            template = MessageTemplate.query.filter_by(
+                channel=channel_enum,
+                is_default=True,
+                is_active=True
+            ).first()
         
         results = {
             'total': len(leads),
@@ -143,6 +153,11 @@ def bulk_send():
     
     # Get templates
     templates = MessageTemplate.query.filter_by(is_active=True).all()
+    default_whatsapp_template = MessageTemplate.query.filter_by(
+        channel=ContactChannel.WHATSAPP,
+        is_default=True,
+        is_active=True
+    ).first()
     
     # Group leads by temperature
     hot_leads = [l for l in leads if l.temperature == LeadTemperature.HOT]
@@ -155,7 +170,8 @@ def bulk_send():
         hot_leads=hot_leads,
         warm_leads=warm_leads,
         cold_leads=cold_leads,
-        templates=templates
+        templates=templates,
+        default_whatsapp_template_id=default_whatsapp_template.id if default_whatsapp_template else None
     )
 
 
@@ -171,12 +187,18 @@ def preview_message():
     if not lead:
         return jsonify({'error': 'Lead not found'}), 404
     
+    template = None
     if template_id:
         template = MessageTemplate.query.get(template_id)
-        if template:
-            message = ContactService.personalize_message(template.content, lead)
-        else:
-            message = lead.first_message or ''
+    if not template:
+        template = MessageTemplate.query.filter_by(
+            channel=ContactChannel.WHATSAPP,
+            is_default=True,
+            is_active=True
+        ).first()
+
+    if template:
+        message = ContactService.personalize_message(template.content, lead)
     else:
         message = lead.first_message or ''
     

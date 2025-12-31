@@ -200,14 +200,29 @@ def contact_lead(lead_id):
     custom_message = request.form.get('message')
     
     # Get message
+    template = None
     if template_id:
         template = MessageTemplate.query.get(template_id)
-        if template:
-            message = ContactService.personalize_message(template.content, lead)
-            subject = ContactService.personalize_message(template.subject or '', lead) if template.subject else None
-        else:
+        if not template:
             flash('Template not found.', 'danger')
             return redirect(url_for('main.lead_detail', lead_id=lead_id))
+    elif not custom_message:
+        # Fallback to default template for the chosen channel
+        try:
+            channel_enum = ContactChannel(channel)
+        except ValueError:
+            channel_enum = ContactChannel.WHATSAPP
+        template = MessageTemplate.query.filter_by(
+            channel=channel_enum,
+            is_default=True,
+            is_active=True
+        ).first()
+        if template:
+            template_id = template.id
+
+    if template:
+        message = ContactService.personalize_message(template.content, lead)
+        subject = ContactService.personalize_message(template.subject or '', lead) if template.subject else None
     elif custom_message:
         message = custom_message
         subject = request.form.get('subject')

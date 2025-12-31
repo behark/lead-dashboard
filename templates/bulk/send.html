@@ -98,7 +98,7 @@
                     <select name="template_id" class="form-select" form="bulkSendForm" id="templateSelect">
                         <option value="">Use lead's first_message</option>
                         {% for t in templates %}
-                        <option value="{{ t.id }}" data-category="{{ t.category }}">
+                        <option value="{{ t.id }}" data-category="{{ t.category }}" {% if default_whatsapp_template_id and t.id == default_whatsapp_template_id %}selected{% endif %}>
                             {{ t.name }} ({{ t.channel.value }})
                         </option>
                         {% endfor %}
