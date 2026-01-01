@@ -35,13 +35,18 @@ def create_app():
         return User.query.get(int(user_id))
     
     # Try to setup logging (gracefully fail if utils not available)
+    # In serverless, only use console logging (no file handlers)
     try:
         from utils.logging_config import setup_logging
         setup_logging(app, log_level='INFO')
-    except ImportError:
-        # Fallback: basic logging if utils not available
+    except (ImportError, OSError, PermissionError) as e:
+        # Fallback: basic logging if utils not available or file system is read-only
         import logging
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler(sys.stdout)]  # Only console, no file
+        )
         app.logger = logging.getLogger(__name__)
     
     # Skip cache and rate limiter in serverless (not needed)

@@ -71,23 +71,31 @@ def setup_logging(app, log_level: str = 'INFO', log_file: str = None) -> None:
     console_handler.setFormatter(console_format)
     app.logger.addHandler(console_handler)
     
-    # File handler with rotation
-    if log_file is None:
-        log_file = Path(__file__).parent.parent / 'app.log'
-    else:
-        log_file = Path(log_file)
+    # File handler with rotation (skip in serverless environments)
+    # Check if we're in a serverless environment (read-only filesystem)
+    is_serverless = os.environ.get('VERCEL') == '1' or os.environ.get('AWS_LAMBDA_FUNCTION_NAME') or os.environ.get('FUNCTION_NAME')
     
-    # Ensure log directory exists
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(JSONFormatter())
-    app.logger.addHandler(file_handler)
+    if not is_serverless:
+        try:
+            if log_file is None:
+                log_file = Path(__file__).parent.parent / 'app.log'
+            else:
+                log_file = Path(log_file)
+            
+            # Ensure log directory exists
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            file_handler = RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,  # 10MB
+                backupCount=5
+            )
+            file_handler.setLevel(level)
+            file_handler.setFormatter(JSONFormatter())
+            app.logger.addHandler(file_handler)
+        except (OSError, PermissionError) as e:
+            # If file system is read-only (serverless), skip file handler
+            app.logger.warning(f"Could not create file handler (serverless environment?): {e}")
     
     # Set levels for third-party loggers
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
