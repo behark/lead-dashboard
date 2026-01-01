@@ -3,6 +3,7 @@ from flask_login import LoginManager
 from flask_apscheduler import APScheduler
 from config import config
 from models import db, User
+import os
 
 login_manager = LoginManager()
 scheduler = APScheduler()
@@ -12,11 +13,34 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     
+    # Setup logging (must be early)
+    from utils.logging_config import setup_logging
+    log_level = os.getenv('LOG_LEVEL', 'INFO' if not app.config.get('DEBUG') else 'DEBUG')
+    setup_logging(app, log_level=log_level)
+    
+    # Validate environment variables
+    from utils.env_validator import validate_on_startup
+    validate_on_startup(app)
+    
     # Initialize extensions
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
+    
+    # Initialize caching
+    from utils.cache import init_cache
+    init_cache(app)
+    
+    # Initialize rate limiting
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri=app.config.get('REDIS_URL')  # Use Redis if available
+    )
     
     @login_manager.user_loader
     def load_user(user_id):

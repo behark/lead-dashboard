@@ -348,3 +348,65 @@ class Analytics(db.Model):
     # A/B testing results
     ab_test_winner_variant = db.Column(db.String(10))
     ab_test_improvement_rate = db.Column(db.Float, default=0)
+
+class SavedFilter(db.Model):
+    """Saved filter combinations for quick reuse"""
+    __tablename__ = 'saved_filters'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    
+    # Filter parameters stored as JSON
+    filters = db.Column(db.JSON, nullable=False)  # {search: '', status: 'NEW', temp: 'HOT', etc}
+    
+    sort_by = db.Column(db.String(20), default='score')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_used = db.Column(db.DateTime)
+    usage_count = db.Column(db.Integer, default=0)
+    is_favorite = db.Column(db.Boolean, default=False)
+    
+    def __repr__(self):
+        return f'<SavedFilter {self.name}>'
+
+
+class BulkJob(db.Model):
+    """Track bulk operations for progress and history"""
+    __tablename__ = 'bulk_jobs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    
+    # Job info
+    job_type = db.Column(db.String(50), nullable=False)  # 'send_message', 'change_status', 'assign', etc
+    status = db.Column(db.String(20), default='pending')  # pending, running, completed, failed, cancelled
+    
+    # Progress tracking
+    total_items = db.Column(db.Integer, default=0)
+    processed_items = db.Column(db.Integer, default=0)
+    successful_items = db.Column(db.Integer, default=0)
+    failed_items = db.Column(db.Integer, default=0)
+    skipped_items = db.Column(db.Integer, default=0)
+    
+    # Job details (JSON)
+    parameters = db.Column(db.JSON)  # channel, template_id, lead_ids, etc
+    results = db.Column(db.JSON)  # {errors: [], skipped: []}
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    
+    @property
+    def progress_percent(self):
+        if self.total_items == 0:
+            return 0
+        return int((self.processed_items / self.total_items) * 100)
+    
+    @property
+    def is_active(self):
+        return self.status in ['pending', 'running']
+    
+    def __repr__(self):
+        return f'<BulkJob {self.job_type} {self.status}>'

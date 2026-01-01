@@ -185,6 +185,12 @@
                     <a class="nav-link {% if 'bulk' in request.endpoint %}active{% endif %}" href="{{ url_for('bulk.bulk_send') }}">
                         <i class="bi bi-send"></i> Bulk Send
                     </a>
+                    <a class="nav-link {% if 'kanban' in request.endpoint %}active{% endif %}" href="{{ url_for('main.kanban_board') }}">
+                        <i class="bi bi-kanban"></i> Board
+                    </a>
+                    <a class="nav-link {% if 'bulk_jobs' in request.endpoint %}active{% endif %}" href="{{ url_for('main.bulk_jobs_dashboard') }}">
+                        <i class="bi bi-clock-history"></i> Operations
+                    </a>
                     {% if current_user.role.value == 'admin' %}
                     <a class="nav-link {% if 'auth.users' in request.endpoint %}active{% endif %}" href="{{ url_for('auth.users') }}">
                         <i class="bi bi-person-gear"></i> Users
@@ -224,9 +230,102 @@
         </div>
     </div>
     
+    <!-- Message Composer Panel -->
+    {% include 'components/message_composer.html' %}
+    
+    <!-- Composer Toggle Button -->
+    <button class="composer-toggle-btn" id="composerToggle" title="Message Composer (M)" onclick="toggleComposer()">
+        <i class="bi bi-chat-left-text"></i>
+    </button>
+    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ===== MESSAGE COMPOSER FUNCTIONS =====
+        function toggleComposer() {
+            const panel = document.getElementById('messageComposerPanel');
+            panel.classList.toggle('open');
+            
+            if (panel.classList.contains('open')) {
+                document.getElementById('composerText').focus();
+            }
+        }
+        
+        function insertVariable(variable) {
+            const textarea = document.getElementById('composerText');
+            textarea.value += variable;
+            textarea.focus();
+            updateCharCount();
+        }
+        
+        function updateCharCount() {
+            const text = document.getElementById('composerText').value;
+            document.getElementById('charCount').textContent = text.length;
+        }
+        
+        function sendComposerMessage() {
+            const leadId = document.getElementById('composerLead').value;
+            const channel = document.querySelector('input[name="composerChannel"]:checked').value;
+            const message = document.getElementById('composerText').value;
+            
+            if (!leadId) {
+                alert('Please select a lead');
+                return;
+            }
+            if (!message) {
+                alert('Please type a message');
+                return;
+            }
+            
+            if (confirm(`Send to this lead via ${channel}?`)) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/lead/${leadId}/contact`;
+                form.innerHTML = `
+                    <input type="hidden" name="channel" value="${channel}">
+                    <input type="hidden" name="message" value="${message}">
+                `;
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        
+        function scheduleComposerMessage() {
+            alert('Scheduling feature coming soon!');
+        }
+        
+        // Initialize composer text listener
+        document.getElementById('composerText').addEventListener('input', updateCharCount);
+        
+        // Keyboard shortcut: M to open composer
+        document.addEventListener('keydown', function(e) {
+            if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+            if (e.key === 'M' || e.key === 'm') {
+                toggleComposer();
+            }
+        });
+        
+        // Load leads for composer dropdown
+        async function loadComposerLeads() {
+            try {
+                const response = await fetch('{{ url_for("main.get_leads_api") }}');
+                const leads = await response.json();
+                const select = document.getElementById('composerLead');
+                
+                leads.forEach(lead => {
+                    const option = document.createElement('option');
+                    option.value = lead.id;
+                    option.textContent = `${lead.name} (${lead.phone})`;
+                    select.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Failed to load leads:', e);
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', loadComposerLeads);
+        
         // Theme Toggler Logic
+
         document.addEventListener('DOMContentLoaded', function() {
             const themeToggle = document.getElementById('themeToggle');
             const icon = themeToggle.querySelector('i');

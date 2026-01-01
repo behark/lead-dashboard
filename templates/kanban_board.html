@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Lead Board - Kanban View{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4>Lead Board <small class="text-muted fs-6">Drag leads to change status</small></h4>
+    <div>
+        <a href="{{ url_for('main.index') }}" class="btn btn-secondary me-2">
+            <i class="bi bi-list"></i> List View
+        </a>
+        <a href="{{ url_for('main.bulk_jobs_dashboard') }}" class="btn btn-info">
+            <i class="bi bi-clock-history"></i> Operations
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="mb-3">
+    <div class="btn-group" role="group">
+        <input type="text" id="kanbanSearch" class="form-control" placeholder="Search leads..." style="max-width: 300px;">
+        <button type="button" class="btn btn-outline-secondary" onclick="filterByTemp('')">All</button>
+        <button type="button" class="btn btn-outline-danger" onclick="filterByTemp('HOT')">
+            <i class="bi bi-fire"></i> HOT
+        </button>
+        <button type="button" class="btn btn-outline-warning" onclick="filterByTemp('WARM')">
+            <i class="bi bi-sun"></i> WARM
+        </button>
+        <button type="button" class="btn btn-outline-info" onclick="filterByTemp('COLD')">
+            <i class="bi bi-snow"></i> COLD
+        </button>
+    </div>
+</div>
+
+<!-- Kanban Board -->
+<div class="row g-3">
+    <div class="col-md-3">
+        <div class="kanban-column">
+            <h6 class="kanban-header bg-secondary">
+                <i class="bi bi-star"></i> NEW
+                <span class="badge bg-light text-dark float-end" id="count-NEW">0</span>
+            </h6>
+            <div class="kanban-container" data-status="NEW" ondrop="handleDrop(event)" ondragover="allowDrop(event)">
+                <!-- Cards loaded by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kanban-column">
+            <h6 class="kanban-header bg-info">
+                <i class="bi bi-telephone"></i> CONTACTED
+                <span class="badge bg-light text-dark float-end" id="count-CONTACTED">0</span>
+            </h6>
+            <div class="kanban-container" data-status="CONTACTED" ondrop="handleDrop(event)" ondragover="allowDrop(event)">
+                <!-- Cards loaded by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kanban-column">
+            <h6 class="kanban-header bg-warning">
+                <i class="bi bi-chat-dots"></i> REPLIED
+                <span class="badge bg-light text-dark float-end" id="count-REPLIED">0</span>
+            </h6>
+            <div class="kanban-container" data-status="REPLIED" ondrop="handleDrop(event)" ondragover="allowDrop(event)">
+                <!-- Cards loaded by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="kanban-column">
+            <h6 class="kanban-header bg-success">
+                <i class="bi bi-check-circle"></i> CLOSED
+                <span class="badge bg-light text-dark float-end" id="count-CLOSED">0</span>
+            </h6>
+            <div class="kanban-container" data-status="CLOSED" ondrop="handleDrop(event)" ondragover="allowDrop(event)">
+                <!-- Cards loaded by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.kanban-column {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 80vh;
+    background: #f8f9fa;
+}
+
+.kanban-header {
+    padding: 12px;
+    color: white;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.kanban-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kanban-card {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 12px;
+    cursor: move;
+    transition: all 0.2s;
+}
+
+.kanban-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.kanban-card.dragging {
+    opacity: 0.5;
+}
+
+.kanban-card-score {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.kanban-card-temp {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.kanban-container.drag-over {
+    background-color: #e7f3ff;
+}
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let leads = [];
+let filteredLeads = [];
+let currentTempFilter = '';
+
+// Load leads from API
+async function loadKanbanLeads() {
+    try {
+        const response = await fetch('{{ url_for("main.get_leads_api") }}');
+        leads = await response.json();
+        filteredLeads = [...leads];
+        renderKanban();
+    } catch (e) {
+        console.error('Failed to load leads:', e);
+    }
+}
+
+function renderKanban() {
+    const statuses = ['NEW', 'CONTACTED', 'REPLIED', 'CLOSED'];
+    
+    statuses.forEach(status => {
+        const container = document.querySelector(`[data-status="${status}"]`);
+        const statusLeads = filteredLeads.filter(l => l.status === status);
+        
+        container.innerHTML = statusLeads.map(lead => `
+            <div class="kanban-card" draggable="true" data-lead-id="${lead.id}" 
+                 ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <strong>${lead.name}</strong>
+                    <span class="kanban-card-score text-primary">${lead.lead_score}</span>
+                </div>
+                <div class="mb-2">
+                    <small class="text-muted">${lead.phone}</small>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">${lead.category}</small>
+                    <span class="kanban-card-temp bg-${lead.temperature === 'HOT' ? 'danger' : lead.temperature === 'WARM' ? 'warning' : 'info'} text-white">
+                        ${lead.temperature}
+                    </span>
+                </div>
+            </div>
+        `).join('');
+        
+        document.getElementById(`count-${status}`).textContent = statusLeads.length;
+    });
+}
+
+function allowDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function handleDragStart(event) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.target.classList.add('dragging');
+}
+
+function handleDragEnd(event) {
+    event.target.classList.remove('dragging');
+    document.querySelectorAll('.kanban-container').forEach(c => c.classList.remove('drag-over'));
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drag-over');
+    
+    const leadId = event.dataTransfer.getData('text/html')?.match(/data-lead-id="(\d+)"/)?.[1];
+    const card = document.querySelector(`[data-lead-id="${leadId}"]`);
+    if (!card) return;
+    
+    const newStatus = event.currentTarget.getAttribute('data-status');
+    
+    // Update backend
+    fetch(`{{ url_for('main.update_lead_status') }}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lead_id: parseInt(leadId), status: newStatus})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // Update local data
+            const lead = leads.find(l => l.id === parseInt(leadId));
+            if (lead) {
+                lead.status = newStatus;
+                renderKanban();
+            }
+        }
+    })
+    .catch(e => console.error('Update failed:', e));
+}
+
+function filterByTemp(temp) {
+    currentTempFilter = temp;
+    filteredLeads = leads.filter(l => !temp || l.temperature === temp);
+    renderKanban();
+}
+
+document.getElementById('kanbanSearch').addEventListener('input', function() {
+    const search = this.value.toLowerCase();
+    filteredLeads = leads.filter(l => 
+        (!currentTempFilter || l.temperature === currentTempFilter) &&
+        (l.name.toLowerCase().includes(search) || l.phone.includes(search))
+    );
+    renderKanban();
+});
+
+// Load on page load
+loadKanbanLeads();
+</script>
+{% endblock %}

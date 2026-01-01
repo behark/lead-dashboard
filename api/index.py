@@ -20,6 +20,10 @@ def create_app():
     app.config.from_object(config['production'])
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'  # In-memory for serverless
     app.config['SCHEDULER_API_ENABLED'] = False
+    app.config['DEBUG'] = False
+    
+    # Disable features that don't work well in serverless
+    app.config['CACHE_TYPE'] = 'null'  # Disable caching in serverless
     
     db.init_app(app)
     login_manager.init_app(app)
@@ -29,6 +33,19 @@ def create_app():
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
+    
+    # Try to setup logging (gracefully fail if utils not available)
+    try:
+        from utils.logging_config import setup_logging
+        setup_logging(app, log_level='INFO')
+    except ImportError:
+        # Fallback: basic logging if utils not available
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        app.logger = logging.getLogger(__name__)
+    
+    # Skip cache and rate limiter in serverless (not needed)
+    # These features require persistent storage which serverless doesn't provide
     
     # Register blueprints
     from routes.auth import auth_bp
@@ -234,4 +251,9 @@ Shkruani "PO" nëse doni të vazhdojmë! ✅''',
     db.session.commit()
 
 
+# Create the Flask app
 app = create_app()
+
+# Export for Vercel serverless function
+# Vercel expects either 'app' or 'application' to be the WSGI application
+application = app  # Alias for compatibility

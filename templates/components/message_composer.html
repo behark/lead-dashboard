@@ -1,0 +1,183 @@
+<!-- Floating Message Composer Sidebar -->
+<div id="messageComposerPanel" class="message-composer-panel">
+    <div class="composer-header">
+        <h6><i class="bi bi-chat-dots"></i> Composer</h6>
+        <button class="btn btn-sm btn-link text-white" onclick="toggleComposer()" title="Minimize (M)">
+            <i class="bi bi-chevron-right"></i>
+        </button>
+    </div>
+    
+    <div class="composer-body">
+        <!-- Lead Selection -->
+        <div class="mb-3">
+            <label class="form-label small">Target Lead</label>
+            <select id="composerLead" class="form-select form-select-sm">
+                <option value="">Select a lead...</option>
+            </select>
+        </div>
+        
+        <!-- Template Selection -->
+        <div class="mb-3">
+            <label class="form-label small">Template</label>
+            <select id="composerTemplate" class="form-select form-select-sm">
+                <option value="custom">Custom Message</option>
+            </select>
+        </div>
+        
+        <!-- Channel Selection -->
+        <div class="mb-3">
+            <label class="form-label small">Channel</label>
+            <div class="btn-group btn-group-sm w-100" role="group">
+                <input type="radio" class="btn-check" name="composerChannel" id="composerWA" value="whatsapp" checked>
+                <label class="btn btn-outline-success" for="composerWA">
+                    <i class="bi bi-whatsapp"></i> WhatsApp
+                </label>
+                
+                <input type="radio" class="btn-check" name="composerChannel" id="composerEmail" value="email">
+                <label class="btn btn-outline-danger" for="composerEmail">
+                    <i class="bi bi-envelope"></i> Email
+                </label>
+                
+                <input type="radio" class="btn-check" name="composerChannel" id="composerSMS" value="sms">
+                <label class="btn btn-outline-info" for="composerSMS">
+                    <i class="bi bi-chat-square"></i> SMS
+                </label>
+            </div>
+        </div>
+        
+        <!-- Message Preview -->
+        <div class="mb-3">
+            <label class="form-label small">Message Preview</label>
+            <div id="composerPreview" class="composer-preview">
+                <small class="text-muted">Select a template or type custom message</small>
+            </div>
+        </div>
+        
+        <!-- Message Editor -->
+        <div class="mb-3">
+            <textarea id="composerText" class="form-control form-control-sm" rows="6" 
+                      placeholder="Type your message..." style="font-size: 12px;"></textarea>
+            <small class="text-muted d-block mt-1">
+                <strong id="charCount">0</strong>/160 chars
+            </small>
+        </div>
+        
+        <!-- Variables -->
+        <div class="mb-3">
+            <small class="text-muted mb-2 d-block">Quick Variables:</small>
+            <div class="btn-group btn-group-sm w-100 flex-wrap gap-1">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertVariable('{name}')">
+                    Name
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertVariable('{city}')">
+                    City
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="insertVariable('{category}')">
+                    Category
+                </button>
+            </div>
+        </div>
+        
+        <!-- Send Button -->
+        <button class="btn btn-sm btn-primary w-100" onclick="sendComposerMessage()">
+            <i class="bi bi-send-fill"></i> Send Now
+        </button>
+        <button class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="scheduleComposerMessage()">
+            <i class="bi bi-clock"></i> Schedule
+        </button>
+    </div>
+</div>
+
+<style>
+.message-composer-panel {
+    position: fixed;
+    right: -380px;
+    top: 0;
+    width: 380px;
+    height: 100vh;
+    background: white;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+    transition: right 0.3s ease;
+    z-index: 1040;
+    display: flex;
+    flex-direction: column;
+    border-left: 3px solid #0d6efd;
+}
+
+.message-composer-panel.open {
+    right: 0;
+}
+
+[data-bs-theme="dark"] .message-composer-panel {
+    background: #1e1e1e;
+    border-left-color: #0d6efd;
+}
+
+.composer-header {
+    background: #0d6efd;
+    color: white;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #0c5cde;
+    flex-shrink: 0;
+}
+
+.composer-header h6 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.composer-header .btn {
+    padding: 0 6px;
+}
+
+.composer-body {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+.composer-preview {
+    background: #f8f9fa;
+    padding: 8px;
+    border-radius: 4px;
+    min-height: 40px;
+    font-size: 12px;
+    word-break: break-word;
+}
+
+[data-bs-theme="dark"] .composer-preview {
+    background: #2d2d2d;
+}
+
+.composer-body .form-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+/* Open button for composer */
+.composer-toggle-btn {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #0d6efd;
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4);
+    z-index: 1030;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.composer-toggle-btn:hover {
+    background: #0c5cde;
+    box-shadow: 0 6px 16px rgba(13, 110, 253, 0.6);
+}
+</style>

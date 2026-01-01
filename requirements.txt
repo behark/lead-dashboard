@@ -1,8 +1,25 @@
+# Core Flask
 flask==3.0.0
 flask-sqlalchemy==3.1.1
 flask-login==0.6.3
 flask-apscheduler==1.13.1
 werkzeug==3.0.1
+
+# HTTP & APIs
 requests==2.31.0
+
+# Communication
 twilio==8.10.0
+
+# Configuration
 python-dotenv==1.0.0
+
+# Caching
+flask-caching==2.1.0
+
+# Rate Limiting
+flask-limiter==3.5.0
+
+# Type checking (optional, for development)
+# mypy==1.7.1
+# types-requests==2.31.0.10

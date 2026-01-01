@@ -31,37 +31,37 @@ class ContactService:
     
     @staticmethod
     def send_whatsapp(lead, message, template_id=None, user_id=None, is_automated=False, ab_variant=None):
-        """Send WhatsApp message via Meta Business API"""
+        """Send WhatsApp message via Twilio"""
         
-        if not current_app.config.get('WHATSAPP_ACCESS_TOKEN'):
-            return {'success': False, 'error': 'WhatsApp API not configured'}
+        if not current_app.config.get('TWILIO_ACCOUNT_SID'):
+            return {'success': False, 'error': 'Twilio API not configured'}
         
         phone = lead.phone
         if not phone:
             return {'success': False, 'error': 'No phone number'}
         
-        # Clean phone number
-        phone = re.sub(r'[^\d+]', '', phone)
-        if not phone.startswith('+'):
-            phone = '+383' + phone.lstrip('0')
-        
-        api_url = f"{current_app.config['WHATSAPP_API_URL']}/{current_app.config['WHATSAPP_PHONE_ID']}/messages"
-        
-        headers = {
-            'Authorization': f"Bearer {current_app.config['WHATSAPP_ACCESS_TOKEN']}",
-            'Content-Type': 'application/json'
-        }
-        
-        payload = {
-            'messaging_product': 'whatsapp',
-            'to': phone.replace('+', ''),
-            'type': 'text',
-            'text': {'body': message}
-        }
+        # Format phone for international use
+        from services.phone_service import format_phone_international
+        formatted_phone = format_phone_international(phone, lead.country)
         
         try:
-            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-            success = response.status_code == 200
+            from twilio.rest import Client
+            
+            client = Client(
+                current_app.config['TWILIO_ACCOUNT_SID'],
+                current_app.config['TWILIO_AUTH_TOKEN']
+            )
+            
+            # Send message using Twilio WhatsApp
+            # Note: Business-initiated messages might require a template (content_sid)
+            # but for sandbox and session-based, 'body' works fine.
+            tw_message = client.messages.create(
+                body=message,
+                from_=f"whatsapp:{current_app.config.get('TWILIO_WHATSAPP_NUMBER', '+14155238886')}",
+                to=f"whatsapp:{formatted_phone}"
+            )
+            
+            success = tw_message.sid is not None
             
             # Log the contact
             log = ContactLog(
@@ -91,8 +91,8 @@ class ContactService:
             
             return {
                 'success': success,
-                'message_id': response.json().get('messages', [{}])[0].get('id') if success else None,
-                'error': response.json().get('error', {}).get('message') if not success else None
+                'message_id': tw_message.sid,
+                'error': None if success else "Failed to get message SID"
             }
             
         except Exception as e:

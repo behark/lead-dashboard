@@ -1,15 +1,22 @@
 from datetime import datetime, timezone, timedelta, date
 from sqlalchemy import func, case
+from sqlalchemy.orm import joinedload
 from models import db, Lead, ContactLog, Analytics, LeadStatus, LeadTemperature, ContactChannel
 from collections import defaultdict
+from typing import Dict, List, Any, Optional
+from utils.cache import cached
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class AnalyticsService:
     """Service for generating analytics and reports"""
     
     @staticmethod
-    def get_dashboard_stats():
-        """Get overview statistics for the dashboard"""
+    @cached(timeout=60, key_prefix='dashboard_stats')  # Cache for 1 minute
+    def get_dashboard_stats() -> Dict[str, Any]:
+        """Get overview statistics for the dashboard (cached)"""
         
         total = Lead.query.count()
         
@@ -62,20 +69,19 @@ class AnalyticsService:
         stats['conversion']['close_rate'] = round((closed / replied * 100), 1) if replied > 0 else 0
         stats['conversion']['overall_rate'] = round((closed / total * 100), 1) if total > 0 else 0
         
-        # Recent activity (last 7 days)
+        # Recent activity (last 7 days) - optimize with single query
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
         
-        stats['recent_activity']['new_leads'] = Lead.query.filter(
-            Lead.created_at >= week_ago
-        ).count()
+        # Use single query with aggregation instead of multiple queries
+        recent_stats = db.session.query(
+            func.count(Lead.id).filter(Lead.created_at >= week_ago).label('new_leads'),
+            func.count(ContactLog.id).filter(ContactLog.sent_at >= week_ago).label('contacts'),
+            func.count(ContactLog.id).filter(ContactLog.responded_at >= week_ago).label('responses')
+        ).first()
         
-        stats['recent_activity']['contacts_made'] = ContactLog.query.filter(
-            ContactLog.sent_at >= week_ago
-        ).count()
-        
-        stats['recent_activity']['responses'] = ContactLog.query.filter(
-            ContactLog.responded_at >= week_ago
-        ).count()
+        stats['recent_activity']['new_leads'] = recent_stats.new_leads or 0
+        stats['recent_activity']['contacts_made'] = recent_stats.contacts or 0
+        stats['recent_activity']['responses'] = recent_stats.responses or 0
         
         return stats
     

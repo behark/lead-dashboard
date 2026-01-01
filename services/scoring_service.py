@@ -1,25 +1,48 @@
 from datetime import datetime, timezone, timedelta
 from models import db, Lead, LeadStatus, LeadTemperature
+from typing import Dict, List, Any
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ScoringService:
     """Service for managing lead scoring and temperature decay"""
     
     @staticmethod
-    def recalculate_all_scores():
-        """Recalculate scores for all leads"""
-        leads = Lead.query.all()
+    def recalculate_all_scores() -> int:
+        """
+        Recalculate scores for all leads
         
-        for lead in leads:
-            lead.calculate_score()
+        Returns:
+            Number of leads processed
+        """
+        # Process in batches to avoid memory issues
+        batch_size = 100
+        total = 0
         
-        db.session.commit()
-        return len(leads)
+        while True:
+            leads = Lead.query.limit(batch_size).offset(total).all()
+            if not leads:
+                break
+            
+            for lead in leads:
+                lead.calculate_score()
+            
+            db.session.commit()
+            total += len(leads)
+            logger.info(f"Recalculated scores for {total} leads...")
+        
+        return total
     
     @staticmethod
-    def apply_temperature_decay():
-        """Apply temperature decay to leads that haven't been contacted"""
+    def apply_temperature_decay() -> int:
+        """
+        Apply temperature decay to leads that haven't been contacted
         
+        Returns:
+            Number of leads decayed
+        """
         now = datetime.now(timezone.utc)
         
         # Decay rules:
@@ -28,7 +51,7 @@ class ScoringService:
         
         decayed_count = 0
         
-        # NEW leads older than 7 days
+        # NEW leads older than 7 days - process in batches
         cutoff_new = now - timedelta(days=7)
         new_leads = Lead.query.filter(
             Lead.status == LeadStatus.NEW,

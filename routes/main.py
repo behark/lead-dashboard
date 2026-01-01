@@ -1,16 +1,74 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel
+from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel, SavedFilter, BulkJob
 from services.analytics_service import AnalyticsService
 from services.scoring_service import ScoringService
 from services.contact_service import ContactService
 from services.sequence_service import SequenceService
+try:
+    from sqlalchemy.orm import joinedload, selectinload
+except ImportError:
+    # Fallback for older SQLAlchemy versions
+    joinedload = None
+    selectinload = None
 from datetime import datetime, timezone
 from collections import Counter
+from typing import List, Dict, Any, Optional
+import json
+
+# Optional utilities - graceful fallback for serverless
+try:
+    from utils.logging_config import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
+try:
+    from utils.cache import cached
+except ImportError:
+    # Fallback: no-op decorator if caching not available
+    def cached(timeout=None, key_prefix=None):
+        def decorator(func):
+            return func
+        return decorator
 
 main_bp = Blueprint('main', __name__)
 
 LEADS_PER_PAGE = 50
+
+
+# Cached helper functions to avoid repeated queries
+@cached(timeout=300, key_prefix='categories')
+def get_cached_categories() -> List[str]:
+    """Get cached list of categories"""
+    categories = db.session.query(Lead.category).distinct().order_by(Lead.category).all()
+    return [c[0] for c in categories if c[0]]
+
+
+@cached(timeout=300, key_prefix='countries')
+def get_cached_countries() -> List[str]:
+    """Get cached list of countries"""
+    countries = db.session.query(Lead.country).distinct().order_by(Lead.country).all()
+    return [c[0] for c in countries if c[0]]
+
+
+@cached(timeout=600, key_prefix='users')
+def get_cached_users() -> List[User]:
+    """Get cached list of active users"""
+    return User.query.filter_by(is_active=True).all()
+
+
+@cached(timeout=300, key_prefix='templates')
+def get_cached_templates() -> List[MessageTemplate]:
+    """Get cached list of active templates"""
+    return MessageTemplate.query.filter_by(is_active=True).all()
+
+
+@cached(timeout=300, key_prefix='sequences')
+def get_cached_sequences() -> List[Sequence]:
+    """Get cached list of active sequences"""
+    return Sequence.query.filter_by(is_active=True).all()
 
 
 @main_bp.route('/')
@@ -73,22 +131,25 @@ def index():
     elif sort_by == 'followup':
         query = query.order_by(Lead.next_followup.asc().nullslast())
     
+    # Optimize query: eager load relationships to avoid N+1 (if available)
+    if joinedload and selectinload:
+        query = query.options(
+            joinedload(Lead.assigned_user),
+            selectinload(Lead.contact_logs)
+        )
+    
     # Pagination
     page = request.args.get('page', 1, type=int)
     pagination = query.paginate(page=page, per_page=LEADS_PER_PAGE, error_out=False)
     leads = pagination.items
     
-    # Get stats
+    # Get stats (cached)
     stats = AnalyticsService.get_dashboard_stats()
     
-    # Get unique values for filters
-    categories = db.session.query(Lead.category).distinct().order_by(Lead.category).all()
-    categories = [c[0] for c in categories if c[0]]
-    
-    countries = db.session.query(Lead.country).distinct().order_by(Lead.country).all()
-    countries = [c[0] for c in countries if c[0]]
-    
-    users = User.query.filter_by(is_active=True).all()
+    # Get unique values for filters (cached)
+    categories = get_cached_categories()
+    countries = get_cached_countries()
+    users = get_cached_users()
     
     # Leads needing attention
     attention = ScoringService.get_leads_needing_attention()
@@ -117,16 +178,23 @@ def index():
 @main_bp.route('/lead/<int:lead_id>')
 @login_required
 def lead_detail(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    # Eager load relationships to avoid N+1 queries (if available)
+    if joinedload and selectinload:
+        lead = Lead.query.options(
+            joinedload(Lead.assigned_user),
+            selectinload(Lead.contact_logs).joinedload(ContactLog.user)
+        ).get_or_404(lead_id)
+    else:
+        lead = Lead.query.get_or_404(lead_id)
     
-    # Get contact history
-    contact_logs = lead.contact_logs.order_by(ContactLog.sent_at.desc()).all()
+    # Get contact history (already loaded via selectinload)
+    contact_logs = sorted(lead.contact_logs, key=lambda x: x.sent_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     
-    # Get available templates
-    templates = MessageTemplate.query.filter_by(is_active=True).all()
+    # Get available templates (cached)
+    templates = get_cached_templates()
     
-    # Get available sequences
-    sequences = Sequence.query.filter_by(is_active=True).all()
+    # Get available sequences (cached)
+    sequences = get_cached_sequences()
     
     # Get users for assignment
     users = User.query.filter_by(is_active=True).all()
@@ -344,3 +412,183 @@ def bulk_action():
     
     db.session.commit()
     return redirect(url_for('main.index'))
+
+
+# ===== SAVED FILTERS =====
+@main_bp.route('/save-filter', methods=['POST'])
+@login_required
+def save_filter():
+    """Save current filter selection for reuse"""
+    filter_name = request.form.get('filter_name')
+    filter_desc = request.form.get('filter_desc', '')
+    is_favorite = request.form.get('is_favorite') == 'on'
+    filters_json = request.form.get('filters')
+    
+    if not filter_name or not filters_json:
+        return jsonify({'success': False, 'error': 'Missing filter name or data'})
+    
+    try:
+        filters_data = json.loads(filters_json)
+    except json.JSONDecodeError:
+        return jsonify({'success': False, 'error': 'Invalid filter data'})
+    
+    saved_filter = SavedFilter(
+        user_id=current_user.id,
+        name=filter_name,
+        description=filter_desc,
+        filters=filters_data,
+        is_favorite=is_favorite
+    )
+    
+    db.session.add(saved_filter)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'id': saved_filter.id})
+
+
+@main_bp.route('/load-filter/<int:filter_id>')
+@login_required
+def load_filter(filter_id):
+    """Load saved filter and redirect to dashboard with filters applied"""
+    saved_filter = SavedFilter.query.get_or_404(filter_id)
+    
+    if saved_filter.user_id != current_user.id:
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('main.index'))
+    
+    # Update usage stats
+    saved_filter.last_used = datetime.now(timezone.utc)
+    saved_filter.usage_count += 1
+    db.session.commit()
+    
+    # Build redirect URL with filters
+    filters = saved_filter.filters
+    query_params = {k: v for k, v in filters.items() if v}
+    
+    return redirect(url_for('main.index', **query_params))
+
+
+@main_bp.route('/delete-filter/<int:filter_id>', methods=['POST'])
+@login_required
+def delete_filter(filter_id):
+    """Delete a saved filter"""
+    saved_filter = SavedFilter.query.get_or_404(filter_id)
+    
+    if saved_filter.user_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Unauthorized'})
+    
+    db.session.delete(saved_filter)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+
+# ===== BULK JOB TRACKING =====
+@main_bp.route('/bulk-jobs')
+@login_required
+def bulk_jobs_dashboard():
+    """Show active and recent bulk operations"""
+    # Get active jobs
+    active_jobs = BulkJob.query.filter_by(
+        user_id=current_user.id,
+        status='running'
+    ).all()
+    
+    # Get recent completed/failed jobs
+    recent_jobs = BulkJob.query.filter_by(
+        user_id=current_user.id
+    ).filter(BulkJob.status.in_(['completed', 'failed', 'cancelled'])).order_by(
+        BulkJob.completed_at.desc()
+    ).limit(20).all()
+    
+    return render_template('bulk_jobs_dashboard.html', 
+                         active_jobs=active_jobs,
+                         recent_jobs=recent_jobs)
+
+
+@main_bp.route('/bulk-job/<int:job_id>/status')
+@login_required
+def get_job_status(job_id):
+    """Get real-time status of a bulk job"""
+    job = BulkJob.query.get_or_404(job_id)
+    
+    if job.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    return jsonify({
+        'id': job.id,
+        'status': job.status,
+        'processed': job.processed_items,
+        'total': job.total_items,
+        'successful': job.successful_items,
+        'failed': job.failed_items,
+        'skipped': job.skipped_items,
+        'progress_percent': job.progress_percent,
+        'results': job.results or {}
+    })
+
+
+@main_bp.route('/bulk-job/<int:job_id>/cancel', methods=['POST'])
+@login_required
+def cancel_job(job_id):
+    """Cancel a running bulk job"""
+    job = BulkJob.query.get_or_404(job_id)
+    
+    if job.user_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if job.is_active:
+        job.status = 'cancelled'
+        job.completed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Job cancelled'})
+    
+    return jsonify({'success': False, 'message': 'Job is not active'})
+
+
+# ===== KANBAN BOARD API =====
+@main_bp.route('/kanban')
+@login_required
+def kanban_board():
+    """Kanban board view for drag-and-drop status management"""
+    return render_template('kanban_board.html')
+
+
+@main_bp.route('/api/leads')
+@login_required
+def get_leads_api():
+    """Get leads as JSON for Kanban board"""
+    leads = Lead.query.filter_by(assigned_to=current_user.id).all()
+    
+    return jsonify([{
+        'id': l.id,
+        'name': l.name,
+        'phone': l.phone,
+        'status': l.status.value,
+        'temperature': l.temperature.value,
+        'lead_score': l.lead_score,
+        'category': l.category,
+        'city': l.city
+    } for l in leads])
+
+
+@main_bp.route('/api/lead/<int:lead_id>/status', methods=['POST'])
+@login_required
+def update_lead_status(lead_id):
+    """Update lead status via API"""
+    lead = Lead.query.get_or_404(lead_id)
+    
+    if lead.assigned_to != current_user.id and current_user.role != 'admin':
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    new_status = data.get('status')
+    
+    try:
+        lead.status = LeadStatus(new_status)
+        db.session.commit()
+        return jsonify({'success': True})
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid status'})
+
+
