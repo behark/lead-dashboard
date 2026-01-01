@@ -72,7 +72,7 @@ def whatsapp_webhook():
                                     # Update template open stats
                                     if log.message_template_id:
                                         from models import MessageTemplate
-                                        template = MessageTemplate.query.get(log.message_template_id)
+                                        template = db.session.get(MessageTemplate, log.message_template_id)
                                         if template:
                                             template.times_opened += 1
                                 
@@ -115,7 +115,7 @@ def mailgun_webhook():
                         log.read_at = datetime.now(timezone.utc)
                         if log.message_template_id:
                             from models import MessageTemplate
-                            template = MessageTemplate.query.get(log.message_template_id)
+                            template = db.session.get(MessageTemplate, log.message_template_id)
                             if template:
                                 template.times_opened += 1
                     
@@ -209,7 +209,7 @@ def twilio_status_webhook():
             # Update template stats
             if log.message_template_id:
                 from models import MessageTemplate
-                template = MessageTemplate.query.get(log.message_template_id)
+                template = db.session.get(MessageTemplate, log.message_template_id)
                 if template:
                     template.times_opened += 1
             current_app.logger.info(f"Message {message_sid} read by lead {log.lead_id}")

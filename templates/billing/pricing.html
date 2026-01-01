@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing Plans{% endblock %}
+
+{% block extra_css %}
+<style>
+    .pricing-card {
+        border: 2px solid #e9ecef;
+        border-radius: 12px;
+        transition: all 0.3s;
+        height: 100%;
+    }
+    .pricing-card:hover {
+        border-color: #0d6efd;
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    .pricing-card.featured {
+        border-color: #0d6efd;
+        border-width: 3px;
+        position: relative;
+    }
+    .pricing-card.featured::before {
+        content: 'POPULAR';
+        position: absolute;
+        top: -12px;
+        right: 20px;
+        background: #0d6efd;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+    .price-display {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #0d6efd;
+    }
+    .feature-list {
+        list-style: none;
+        padding: 0;
+    }
+    .feature-list li {
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .feature-list li:last-child {
+        border-bottom: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 mb-3">Choose Your Plan</h1>
+        <p class="lead text-muted">Start with a free trial, upgrade anytime</p>
+    </div>
+    
+    <div class="row g-4">
+        <!-- FREE Plan -->
+        <div class="col-md-3">
+            <div class="pricing-card p-4">
+                <h3 class="mb-3">FREE</h3>
+                <div class="price-display mb-3">€0</div>
+                <p class="text-muted mb-4">/month</p>
+                
+                <ul class="feature-list">
+                    <li><i class="bi bi-check-circle text-success"></i> 50 leads/month</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 1 team member</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 10 messages/day</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 3 templates</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 1 sequence</li>
+                    <li><i class="bi bi-x-circle text-muted"></i> API access</li>
+                    <li><i class="bi bi-x-circle text-muted"></i> White label</li>
+                    <li><i class="bi bi-x-circle text-muted"></i> Priority support</li>
+                </ul>
+                
+                {% if current_plan == SubscriptionPlan.FREE %}
+                <button class="btn btn-outline-primary w-100 mt-4" disabled>
+                    Current Plan
+                </button>
+                {% else %}
+                <button class="btn btn-outline-primary w-100 mt-4" disabled>
+                    Downgrade
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- STARTER Plan -->
+        <div class="col-md-3">
+            <div class="pricing-card p-4">
+                <h3 class="mb-3">STARTER</h3>
+                <div class="price-display mb-3">€49</div>
+                <p class="text-muted mb-4">/month</p>
+                <p class="text-success small mb-4"><strong>€490/year</strong> (save 17%)</p>
+                
+                <ul class="feature-list">
+                    <li><i class="bi bi-check-circle text-success"></i> 500 leads/month</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 3 team members</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 100 messages/day</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 10 templates</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 5 sequences</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Advanced analytics</li>
+                    <li><i class="bi bi-x-circle text-muted"></i> API access</li>
+                    <li><i class="bi bi-x-circle text-muted"></i> White label</li>
+                </ul>
+                
+                {% if current_plan == SubscriptionPlan.STARTER %}
+                <button class="btn btn-primary w-100 mt-4" disabled>
+                    Current Plan
+                </button>
+                {% elif can_manage_billing %}
+                <a href="{{ url_for('billing.subscribe', plan='starter', cycle='monthly') }}" class="btn btn-primary w-100 mt-4">
+                    Subscribe Now
+                </a>
+                {% else %}
+                <button class="btn btn-outline-secondary w-100 mt-4" disabled>
+                    Contact Owner
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- PROFESSIONAL Plan (Featured) -->
+        <div class="col-md-3">
+            <div class="pricing-card featured p-4">
+                <h3 class="mb-3">PROFESSIONAL</h3>
+                <div class="price-display mb-3">€149</div>
+                <p class="text-muted mb-4">/month</p>
+                <p class="text-success small mb-4"><strong>€1,490/year</strong> (save 17%)</p>
+                
+                <ul class="feature-list">
+                    <li><i class="bi bi-check-circle text-success"></i> 5,000 leads/month</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 10 team members</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 500 messages/day</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 50 templates</li>
+                    <li><i class="bi bi-check-circle text-success"></i> 20 sequences</li>
+                    <li><i class="bi bi-check-circle text-success"></i> API access</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Custom integrations</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Priority support</li>
+                </ul>
+                
+                {% if current_plan == SubscriptionPlan.PROFESSIONAL %}
+                <button class="btn btn-primary w-100 mt-4" disabled>
+                    Current Plan
+                </button>
+                {% elif can_manage_billing %}
+                <a href="{{ url_for('billing.subscribe', plan='professional', cycle='monthly') }}" class="btn btn-primary w-100 mt-4">
+                    Subscribe Now
+                </a>
+                {% else %}
+                <button class="btn btn-outline-secondary w-100 mt-4" disabled>
+                    Contact Owner
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- ENTERPRISE Plan -->
+        <div class="col-md-3">
+            <div class="pricing-card p-4">
+                <h3 class="mb-3">ENTERPRISE</h3>
+                <div class="price-display mb-3">€499</div>
+                <p class="text-muted mb-4">/month</p>
+                <p class="text-success small mb-4"><strong>€4,990/year</strong> (save 17%)</p>
+                
+                <ul class="feature-list">
+                    <li><i class="bi bi-infinity text-success"></i> Unlimited leads</li>
+                    <li><i class="bi bi-infinity text-success"></i> Unlimited users</li>
+                    <li><i class="bi bi-infinity text-success"></i> Unlimited messages</li>
+                    <li><i class="bi bi-infinity text-success"></i> Unlimited templates</li>
+                    <li><i class="bi bi-infinity text-success"></i> Unlimited sequences</li>
+                    <li><i class="bi bi-check-circle text-success"></i> API access</li>
+                    <li><i class="bi bi-check-circle text-success"></i> White label</li>
+                    <li><i class="bi bi-check-circle text-success"></i> Dedicated support</li>
+                </ul>
+                
+                {% if current_plan == SubscriptionPlan.ENTERPRISE %}
+                <button class="btn btn-primary w-100 mt-4" disabled>
+                    Current Plan
+                </button>
+                {% elif can_manage_billing %}
+                <a href="{{ url_for('billing.subscribe', plan='enterprise', cycle='monthly') }}" class="btn btn-primary w-100 mt-4">
+                    Subscribe Now
+                </a>
+                {% else %}
+                <button class="btn btn-outline-secondary w-100 mt-4" disabled>
+                    Contact Owner
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="text-center mt-5">
+        <p class="text-muted">
+            <i class="bi bi-shield-check"></i> All plans include 14-day free trial • 
+            <i class="bi bi-arrow-counterclockwise"></i> Cancel anytime • 
+            <i class="bi bi-headset"></i> Email support
+        </p>
+        <a href="{{ url_for('billing.billing_dashboard') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Billing
+        </a>
+    </div>
+</div>
+{% endblock %}

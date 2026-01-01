@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}GDPR Compliance{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>🔒 GDPR Compliance</h2>
+    </div>
+    
+    <!-- Compliance Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Total Leads</h6>
+                    <h2 class="mb-0">{{ total_leads }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">GDPR Consent</h6>
+                    <h2 class="mb-0 text-success">{{ consented_leads }}</h2>
+                    <small class="text-muted">{{ "%.1f"|format(consent_rate) }}% consent rate</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Opted Out</h6>
+                    <h2 class="mb-0 text-danger">{{ opted_out }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- GDPR Rights -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">📥 Right to Data Portability</h5>
+                </div>
+                <div class="card-body">
+                    <p>Download all your organization's data in a portable format.</p>
+                    <p class="small text-muted">
+                        Includes: Leads, Contact Logs, Organization Info
+                        <br>Format: JSON and CSV files in a ZIP archive
+                    </p>
+                    <a href="{{ url_for('gdpr.export_data') }}" class="btn btn-primary">
+                        <i class="bi bi-download"></i> Export All Data
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">🗑️ Right to be Forgotten</h5>
+                </div>
+                <div class="card-body">
+                    <p>Delete lead data permanently (GDPR Article 17).</p>
+                    <p class="small text-muted">
+                        This will permanently delete lead and all associated contact logs.
+                        <br><strong>This action cannot be undone!</strong>
+                    </p>
+                    <button class="btn btn-danger" onclick="showBulkDelete()">
+                        <i class="bi bi-trash"></i> Bulk Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Legal Documents -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">📄 Legal Documents</h5>
+        </div>
+        <div class="card-body">
+            <div class="list-group">
+                <a href="{{ url_for('gdpr.privacy_policy') }}" class="list-group-item list-group-item-action" target="_blank">
+                    <i class="bi bi-shield-check"></i> Privacy Policy
+                </a>
+                <a href="{{ url_for('gdpr.terms_of_service') }}" class="list-group-item list-group-item-action" target="_blank">
+                    <i class="bi bi-file-text"></i> Terms of Service
+                </a>
+                <a href="{{ url_for('gdpr.cookie_policy') }}" class="list-group-item list-group-item-action" target="_blank">
+                    <i class="bi bi-cookie"></i> Cookie Policy
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Compliance Checklist -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">✅ GDPR Compliance Checklist</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Data export functionality
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Right to deletion
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Consent management
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Privacy policy
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Terms of service
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Cookie policy
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Data encryption
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle-fill text-success"></i> 
+                            Access controls
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Delete Modal -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">⚠️ Bulk Delete Leads</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Warning:</strong> This will permanently delete selected leads and all associated data.</p>
+                <p class="text-danger"><strong>This action cannot be undone!</strong></p>
+                <p>To proceed, please:</p>
+                <ol>
+                    <li>Go to the leads page</li>
+                    <li>Select leads you want to delete</li>
+                    <li>Use the bulk delete action</li>
+                </ol>
+                <p class="text-muted small">For GDPR compliance, this feature is available to organization owners only.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <a href="{{ url_for('main.index') }}" class="btn btn-danger">
+                    <i class="bi bi-arrow-right"></i> Go to Leads
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showBulkDelete() {
+    new bootstrap.Modal(document.getElementById('bulkDeleteModal')).show();
+}
+</script>
+{% endblock %}

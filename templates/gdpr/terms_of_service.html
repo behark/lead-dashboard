@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <h1 class="mb-4">Terms of Service</h1>
+            <p class="text-muted">Last updated: January 1, 2026</p>
+            
+            <hr>
+            
+            <section class="mb-5">
+                <h2>1. Acceptance of Terms</h2>
+                <p>
+                    By accessing and using our lead generation platform, you agree to be bound by 
+                    these Terms of Service. If you disagree with any part of these terms, 
+                    you may not access the service.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>2. Description of Service</h2>
+                <p>
+                    We provide a SaaS platform for lead generation, management, and outreach. 
+                    Our service includes:
+                </p>
+                <ul>
+                    <li>Lead discovery and scoring</li>
+                    <li>Contact management</li>
+                    <li>Message templates and sequences</li>
+                    <li>Analytics and reporting</li>
+                    <li>Team collaboration tools</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>3. User Accounts</h2>
+                <p>You agree to:</p>
+                <ul>
+                    <li>Provide accurate account information</li>
+                    <li>Maintain security of your account</li>
+                    <li>Notify us of unauthorized access</li>
+                    <li>Be responsible for all activity under your account</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>4. Subscription and Billing</h2>
+                <ul>
+                    <li>Subscriptions are billed monthly or yearly</li>
+                    <li>Payment is processed via Stripe</li>
+                    <li>You can cancel anytime</li>
+                    <li>No refunds for partial periods</li>
+                    <li>Prices may change with 30 days notice</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>5. Acceptable Use</h2>
+                <p>You agree NOT to:</p>
+                <ul>
+                    <li>Use the service for illegal purposes</li>
+                    <li>Send spam or unsolicited messages</li>
+                    <li>Violate any laws or regulations</li>
+                    <li>Interfere with service operation</li>
+                    <li>Access other users' data without permission</li>
+                    <li>Reverse engineer or copy our software</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>6. Data and Privacy</h2>
+                <p>
+                    Your use of our service is also governed by our Privacy Policy. 
+                    You are responsible for:
+                </p>
+                <ul>
+                    <li>Obtaining consent from leads before contacting them</li>
+                    <li>Complying with GDPR and local data protection laws</li>
+                    <li>Not collecting data you don't have permission to use</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>7. Intellectual Property</h2>
+                <p>
+                    The service and all content are owned by us. You may not copy, modify, 
+                    or distribute our software without permission.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>8. Service Availability</h2>
+                <p>
+                    We strive for 99.9% uptime but do not guarantee uninterrupted service. 
+                    We are not liable for downtime or service interruptions.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>9. Limitation of Liability</h2>
+                <p>
+                    To the maximum extent permitted by law, we are not liable for any indirect, 
+                    incidental, or consequential damages arising from your use of the service.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>10. Termination</h2>
+                <p>
+                    We may terminate or suspend your account if you violate these terms. 
+                    You may cancel your subscription at any time.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>11. Changes to Terms</h2>
+                <p>
+                    We may modify these terms at any time. Continued use constitutes acceptance 
+                    of modified terms.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>12. Governing Law</h2>
+                <p>
+                    These terms are governed by the laws of [Your Country/Jurisdiction]. 
+                    Any disputes will be resolved in [Your Court/Jurisdiction].
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>13. Contact</h2>
+                <p>
+                    Questions about these terms? Contact us at:
+                    <br><strong>Email:</strong> legal@yourdomain.com
+                </p>
+            </section>
+            
+            <hr>
+            
+            <div class="text-center mt-5">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

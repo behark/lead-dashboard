@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}2FA Backup Codes{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-check-circle"></i> 2FA Enabled Successfully!</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <strong><i class="bi bi-exclamation-triangle"></i> Important:</strong> Save these backup codes in a safe place. 
+                        You can use them to access your account if you lose your authenticator device.
+                    </div>
+                    
+                    <div class="bg-light p-4 rounded mb-4">
+                        <h6>Your Backup Codes:</h6>
+                        <div class="row">
+                            {% for code in backup_codes %}
+                            <div class="col-md-6 mb-2">
+                                <code class="fs-5">{{ code }}</code>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    
+                    <p class="text-muted">
+                        <strong>Note:</strong> Each backup code can only be used once. Generate new codes from your settings if needed.
+                    </p>
+                    
+                    <div class="d-flex gap-2">
+                        <button onclick="window.print()" class="btn btn-primary">
+                            <i class="bi bi-printer"></i> Print Codes
+                        </button>
+                        <a href="{{ url_for('main.index') }}" class="btn btn-success">
+                            Continue to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+@media print {
+    .btn, .alert, .card-header { display: none; }
+    .card { border: none; box-shadow: none; }
+}
+</style>
+{% endblock %}

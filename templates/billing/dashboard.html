@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block title %}Billing & Subscription{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>💳 Billing & Subscription</h2>
+        {% if can_manage_billing %}
+        <a href="{{ url_for('billing.pricing') }}" class="btn btn-primary">
+            <i class="bi bi-arrow-up-circle"></i> Upgrade Plan
+        </a>
+        {% endif %}
+    </div>
+    
+    <div class="row">
+        <!-- Current Plan -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Current Subscription</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h4 class="text-primary">{{ subscription.plan.value|title }} Plan</h4>
+                            <p class="text-muted mb-0">
+                                {% if subscription.status == SubscriptionStatus.TRIAL %}
+                                    <span class="badge bg-warning">Trial</span>
+                                    {% if subscription.trial_ends_at %}
+                                        <small class="ms-2">Expires in {{ organization.trial_days_left }} days</small>
+                                    {% endif %}
+                                {% elif subscription.status == SubscriptionStatus.ACTIVE %}
+                                    <span class="badge bg-success">Active</span>
+                                {% elif subscription.status == SubscriptionStatus.PAST_DUE %}
+                                    <span class="badge bg-danger">Past Due</span>
+                                {% elif subscription.status == SubscriptionStatus.CANCELED %}
+                                    <span class="badge bg-secondary">Canceled</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <h3 class="mb-0">
+                                {% if subscription.plan == SubscriptionPlan.FREE %}
+                                    €0
+                                {% else %}
+                                    €{{ "%.2f"|format(plan_config.price_monthly if subscription.billing_cycle == 'monthly' else plan_config.price_yearly / 12) }}
+                                {% endif %}
+                                <small class="text-muted">/month</small>
+                            </h3>
+                            {% if subscription.billing_cycle == 'yearly' %}
+                                <small class="text-success">Save {{ "%.0f"|format((plan_config.price_monthly * 12 - plan_config.price_yearly) / (plan_config.price_monthly * 12) * 100) }}% with yearly billing</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    {% if subscription.next_billing_date %}
+                    <hr>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <small class="text-muted">Next billing date:</small>
+                            <p class="mb-0"><strong>{{ subscription.next_billing_date.strftime('%B %d, %Y') }}</strong></p>
+                        </div>
+                        <div class="col-md-6">
+                            <small class="text-muted">Billing cycle:</small>
+                            <p class="mb-0"><strong>{{ subscription.billing_cycle|title }}</strong></p>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if can_manage_billing %}
+                    <hr>
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('billing.customer_portal') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-gear"></i> Manage Subscription
+                        </a>
+                        {% if subscription.status == SubscriptionStatus.ACTIVE and not subscription.cancel_at_period_end %}
+                        <button class="btn btn-outline-danger" onclick="cancelSubscription()">
+                            <i class="bi bi-x-circle"></i> Cancel Subscription
+                        </button>
+                        {% elif subscription.cancel_at_period_end %}
+                        <button class="btn btn-success" onclick="resumeSubscription()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Resume Subscription
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Usage Stats -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">📊 Usage This Month</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Leads Created:</span>
+                                <strong>{{ leads_this_month }} / {{ plan_config.max_leads if plan_config.max_leads > 0 else '∞' }}</strong>
+                            </div>
+                            <div class="progress mt-2" style="height: 8px;">
+                                {% set lead_percent = (leads_this_month / plan_config.max_leads * 100) if plan_config.max_leads > 0 else 0 %}
+                                <div class="progress-bar {% if lead_percent > 90 %}bg-danger{% elif lead_percent > 75 %}bg-warning{% else %}bg-success{% endif %}" 
+                                     style="width: {{ [lead_percent, 100]|min }}%"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Messages Sent Today:</span>
+                                <strong>{{ messages_today }} / {{ plan_config.max_contacts_per_day if plan_config.max_contacts_per_day > 0 else '∞' }}</strong>
+                            </div>
+                            <div class="progress mt-2" style="height: 8px;">
+                                {% set msg_percent = (messages_today / plan_config.max_contacts_per_day * 100) if plan_config.max_contacts_per_day > 0 else 0 %}
+                                <div class="progress-bar {% if msg_percent > 90 %}bg-danger{% elif msg_percent > 75 %}bg-warning{% else %}bg-info{% endif %}" 
+                                     style="width: {{ [msg_percent, 100]|min }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Plan Features -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">✨ Plan Features</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li class="mb-2">
+                            <i class="bi bi-{% if plan_config.max_leads > 0 %}check{% else %}infinity{% endif %} text-success"></i>
+                            <strong>{{ plan_config.max_leads if plan_config.max_leads > 0 else 'Unlimited' }}</strong> leads/month
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if plan_config.max_users > 0 %}check{% else %}infinity{% endif %} text-success"></i>
+                            <strong>{{ plan_config.max_users if plan_config.max_users > 0 else 'Unlimited' }}</strong> team members
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if plan_config.max_templates > 0 %}check{% else %}infinity{% endif %} text-success"></i>
+                            <strong>{{ plan_config.max_templates if plan_config.max_templates > 0 else 'Unlimited' }}</strong> templates
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if subscription.has_api_access %}check-circle-fill text-success{% else %}x-circle text-muted{% endif %}"></i>
+                            API Access
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if subscription.has_white_label %}check-circle-fill text-success{% else %}x-circle text-muted{% endif %}"></i>
+                            White Label
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if subscription.has_priority_support %}check-circle-fill text-success{% else %}x-circle text-muted{% endif %}"></i>
+                            Priority Support
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-{% if subscription.has_advanced_analytics %}check-circle-fill text-success{% else %}x-circle text-muted{% endif %}"></i>
+                            Advanced Analytics
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Invoices -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">📄 Recent Invoices</h5>
+        </div>
+        <div class="card-body">
+            {% if invoices %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for invoice in invoices %}
+                        <tr>
+                            <td>{{ invoice.invoice_number or 'N/A' }}</td>
+                            <td>{{ invoice.issued_at.strftime('%B %d, %Y') }}</td>
+                            <td>€{{ "%.2f"|format(invoice.amount) }} {{ invoice.currency }}</td>
+                            <td>
+                                <span class="badge {% if invoice.status == 'paid' %}bg-success{% elif invoice.status == 'pending' %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ invoice.status|title }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if invoice.pdf_url %}
+                                <a href="{{ invoice.pdf_url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-download"></i> Download
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4">No invoices yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function cancelSubscription() {
+    if (!confirm('Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your billing period.')) {
+        return;
+    }
+    
+    fetch('{{ url_for("billing.cancel_subscription") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cancel_at_period_end: true})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to cancel subscription'));
+        }
+    });
+}
+
+function resumeSubscription() {
+    fetch('{{ url_for("billing.resume_subscription") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to resume subscription'));
+        }
+    });
+}
+</script>
+{% endblock %}

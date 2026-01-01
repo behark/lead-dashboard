@@ -3,6 +3,8 @@ flask==3.0.0
 flask-sqlalchemy==3.1.1
 flask-login==0.6.3
 flask-apscheduler==1.13.1
+flask-wtf==1.2.1
+flask-migrate==4.0.5
 werkzeug==3.0.1
 
 # HTTP & APIs
@@ -19,6 +21,23 @@ flask-caching==2.1.0
 
 # Rate Limiting
 flask-limiter==3.5.0
+
+# Production Server
+gunicorn==21.2.0
+
+# Stripe Payment Processing
+stripe==7.0.0
+
+# Error Tracking
+sentry-sdk[flask]==1.40.0
+
+# Two-Factor Authentication
+pyotp==2.9.0
+qrcode[pil]==7.4.2
+
+# Background Jobs (for async processing)
+rq==1.15.1
+redis==5.0.1
 
 # Type checking (optional, for development)
 # mypy==1.7.1

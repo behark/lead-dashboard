@@ -5,8 +5,13 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 from flask import current_app
 from models import db, Lead, ContactLog, MessageTemplate, ContactChannel, LeadStatus
+from sqlalchemy.exc import SQLAlchemyError
+from requests.exceptions import RequestException
 import re
 import random
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ContactService:
@@ -19,8 +24,13 @@ class ContactService:
             '{name}': lead.name or '',
             '{business_name}': lead.name or '',
             '{city}': lead.city or '',
+            '{country}': lead.country or '',
             '{rating}': str(lead.rating) if lead.rating else '',
             '{category}': lead.category or '',
+            '{phone}': lead.phone or '',
+            '{email}': lead.email or '',
+            '{score}': str(lead.lead_score) if lead.lead_score else '',
+            '{temperature}': lead.temperature.value if lead.temperature else '',
         }
         
         message = template_content
@@ -84,11 +94,23 @@ class ContactService:
                 
                 # Update template stats
                 if template_id:
-                    template = MessageTemplate.query.get(template_id)
+                    template = db.session.get(MessageTemplate, template_id)
                     if template:
                         template.times_sent += 1
             
             db.session.add(log)
+            
+            # Record usage
+            if success:
+                from models_saas import UsageRecord
+                UsageRecord.record_usage(
+                    organization_id=lead.organization_id,
+                    usage_type='message_sent',
+                    user_id=user_id,
+                    resource_id=log.id,
+                    quantity=1
+                )
+            
             db.session.commit()
             
             return {
@@ -97,7 +119,15 @@ class ContactService:
                 'error': None if success else "Failed to get message SID"
             }
             
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Database error sending WhatsApp")
+            return {'success': False, 'error': 'Database error: ' + str(e)}
+        except RequestException as e:
+            logger.exception("API error sending WhatsApp")
+            return {'success': False, 'error': 'API error: ' + str(e)}
         except Exception as e:
+            logger.exception("Unexpected error sending WhatsApp")
             return {'success': False, 'error': str(e)}
     
     @staticmethod
@@ -148,15 +178,34 @@ class ContactService:
                 lead.status = LeadStatus.CONTACTED
             
             if template_id:
-                template = MessageTemplate.query.get(template_id)
+                template = db.session.get(MessageTemplate, template_id)
                 if template:
                     template.times_sent += 1
             
             db.session.add(log)
+            
+            # Record usage
+            if success:
+                from models_saas import UsageRecord
+                UsageRecord.record_usage(
+                    organization_id=lead.organization_id,
+                    usage_type='message_sent',
+                    user_id=user_id,
+                    resource_id=log.id,
+                    quantity=1
+                )
+            
             db.session.commit()
             
             return {'success': True}
             
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Database error sending email")
+            return {'success': False, 'error': 'Database error: ' + str(e)}
+        except (smtplib.SMTPException, OSError) as e:
+            logger.exception("SMTP error sending email")
+            return {'success': False, 'error': 'Email error: ' + str(e)}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -208,15 +257,34 @@ class ContactService:
                 lead.status = LeadStatus.CONTACTED
             
             if template_id:
-                template = MessageTemplate.query.get(template_id)
+                template = db.session.get(MessageTemplate, template_id)
                 if template:
                     template.times_sent += 1
             
             db.session.add(log)
+            
+            # Record usage
+            if success:
+                from models_saas import UsageRecord
+                UsageRecord.record_usage(
+                    organization_id=lead.organization_id,
+                    usage_type='message_sent',
+                    user_id=user_id,
+                    resource_id=log.id,
+                    quantity=1
+                )
+            
             db.session.commit()
             
             return {'success': True, 'message_sid': tw_message.sid}
             
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Database error sending SMS")
+            return {'success': False, 'error': 'Database error: ' + str(e)}
+        except RequestException as e:
+            logger.exception("API error sending SMS")
+            return {'success': False, 'error': 'API error: ' + str(e)}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -327,8 +395,13 @@ class ContactService:
         lead.status = LeadStatus.LOST
         lead.notes = (lead.notes or '') + f'\n[OPT-OUT {lead.opt_out_date.strftime("%Y-%m-%d")}] {reason or "User requested opt-out"}'
 
-        db.session.commit()
-        return True
+        try:
+            db.session.commit()
+            return True
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error recording opt-out")
+            return False
 
     @staticmethod
     def record_response(lead, channel, response_content=None):
@@ -352,7 +425,7 @@ class ContactService:
 
             # Update template stats
             if log.message_template_id:
-                template = MessageTemplate.query.get(log.message_template_id)
+                template = db.session.get(MessageTemplate, log.message_template_id)
                 if template:
                     template.times_responded += 1
 
@@ -367,9 +440,13 @@ class ContactService:
             lead.response_time_hours = diff.total_seconds() / 3600
 
         lead.calculate_score()
-        db.session.commit()
-
-        return True
+        try:
+            db.session.commit()
+            return True
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error recording response")
+            return False
 
     @staticmethod
     def can_contact_lead(lead, channel):

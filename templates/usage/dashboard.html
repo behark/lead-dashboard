@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Usage & Limits{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .usage-card {
+        border-left: 4px solid;
+        transition: all 0.3s;
+    }
+    .usage-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .usage-card.leads { border-left-color: #0d6efd; }
+    .usage-card.messages { border-left-color: #198754; }
+    .usage-card.api { border-left-color: #ffc107; }
+    
+    .progress-lg {
+        height: 20px;
+        border-radius: 10px;
+    }
+    
+    .usage-stat {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>📊 Usage & Limits</h2>
+        <div>
+            <a href="{{ url_for('usage.usage_history') }}" class="btn btn-outline-primary">
+                <i class="bi bi-clock-history"></i> View History
+            </a>
+            {% if warnings %}
+            <a href="{{ url_for('billing.pricing') }}" class="btn btn-primary">
+                <i class="bi bi-arrow-up-circle"></i> Upgrade Plan
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Warnings -->
+    {% if warnings %}
+    <div class="mb-4">
+        {% for warning in warnings %}
+        <div class="alert alert-{{ warning.type }} alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i> {{ warning.message }}
+            {% if warning.type == 'danger' %}
+            <a href="{{ url_for('billing.pricing') }}" class="alert-link">Upgrade now</a>
+            {% endif %}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <!-- Current Usage Stats -->
+    <div class="row g-4 mb-4">
+        <!-- Leads Usage -->
+        <div class="col-md-4">
+            <div class="card usage-card leads h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">Leads This Month</h6>
+                            <div class="usage-stat text-primary">{{ leads_this_month }}</div>
+                            {% if max_leads > 0 %}
+                            <small class="text-muted">of {{ max_leads }} limit</small>
+                            {% else %}
+                            <small class="text-success">Unlimited</small>
+                            {% endif %}
+                        </div>
+                        <i class="bi bi-people fs-1 text-primary opacity-25"></i>
+                    </div>
+                    
+                    {% if max_leads > 0 %}
+                    <div class="progress progress-lg">
+                        <div class="progress-bar {% if leads_percent >= 90 %}bg-danger{% elif leads_percent >= 75 %}bg-warning{% else %}bg-primary{% endif %}" 
+                             role="progressbar" 
+                             style="width: {{ [leads_percent, 100]|min }}%"
+                             aria-valuenow="{{ leads_this_month }}" 
+                             aria-valuemin="0" 
+                             aria-valuemax="{{ max_leads }}">
+                            {{ "%.0f"|format(leads_percent) }}%
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-calendar"></i> Resets on {{ month_start.strftime('%B 1, %Y') }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Messages Usage -->
+        <div class="col-md-4">
+            <div class="card usage-card messages h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">Messages Today</h6>
+                            <div class="usage-stat text-success">{{ messages_today }}</div>
+                            {% if max_messages_per_day > 0 %}
+                            <small class="text-muted">of {{ max_messages_per_day }} limit</small>
+                            {% else %}
+                            <small class="text-success">Unlimited</small>
+                            {% endif %}
+                        </div>
+                        <i class="bi bi-chat-dots fs-1 text-success opacity-25"></i>
+                    </div>
+                    
+                    {% if max_messages_per_day > 0 %}
+                    <div class="progress progress-lg">
+                        <div class="progress-bar {% if messages_percent >= 90 %}bg-danger{% elif messages_percent >= 75 %}bg-warning{% else %}bg-success{% endif %}" 
+                             role="progressbar" 
+                             style="width: {{ [messages_percent, 100]|min }}%"
+                             aria-valuenow="{{ messages_today }}" 
+                             aria-valuemin="0" 
+                             aria-valuemax="{{ max_messages_per_day }}">
+                            {{ "%.0f"|format(messages_percent) }}%
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-calendar-day"></i> Resets at midnight UTC
+                        </small>
+                        <br>
+                        <small class="text-info">
+                            <i class="bi bi-info-circle"></i> {{ messages_this_month }} sent this month
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- API Calls -->
+        <div class="col-md-4">
+            <div class="card usage-card api h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">API Calls This Month</h6>
+                            <div class="usage-stat text-warning">{{ api_calls_this_month }}</div>
+                            {% if subscription.has_api_access %}
+                            <small class="text-success">API Enabled</small>
+                            {% else %}
+                            <small class="text-muted">Not available on {{ subscription.plan.value }} plan</small>
+                            {% endif %}
+                        </div>
+                        <i class="bi bi-code-slash fs-1 text-warning opacity-25"></i>
+                    </div>
+                    
+                    {% if subscription.has_api_access %}
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-calendar"></i> Resets on {{ month_start.strftime('%B 1, %Y') }}
+                        </small>
+                    </div>
+                    {% else %}
+                    <a href="{{ url_for('billing.pricing') }}" class="btn btn-sm btn-warning mt-3">
+                        <i class="bi bi-arrow-up"></i> Upgrade for API Access
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Usage Charts -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">📈 Usage Over Time (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="usageChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">🕐 Recent Activity</h5>
+                    <a href="{{ url_for('usage.usage_history') }}" class="btn btn-sm btn-outline-primary">
+                        View All
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if recent_usage %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                    <th>Quantity</th>
+                                    <th>User</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for record in recent_usage %}
+                                <tr>
+                                    <td>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>
+                                        <span class="badge 
+                                            {% if record.usage_type == 'lead_created' %}bg-primary
+                                            {% elif record.usage_type == 'message_sent' %}bg-success
+                                            {% elif record.usage_type == 'api_call' %}bg-warning
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ record.usage_type.replace('_', ' ')|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ record.quantity }}</td>
+                                    <td>
+                                        {% if record.user_id %}
+                                        User #{{ record.user_id }}
+                                        {% else %}
+                                        System
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center py-4">No usage recorded yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Usage Chart
+const ctx = document.getElementById('usageChart').getContext('2d');
+const usageChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: {{ dates|tojson }},
+        datasets: [
+            {
+                label: 'Leads Created',
+                data: {{ leads_data|tojson }},
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                tension: 0.4,
+                fill: true
+            },
+            {
+                label: 'Messages Sent',
+                data: {{ messages_data|tojson }},
+                borderColor: '#198754',
+                backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                tension: 0.4,
+                fill: true
+            },
+            {
+                label: 'API Calls',
+                data: {{ api_calls_data|tojson }},
+                borderColor: '#ffc107',
+                backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                tension: 0.4,
+                fill: true
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top',
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        },
+        interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+        }
+    }
+});
+
+// Auto-refresh every 30 seconds
+setInterval(function() {
+    fetch('{{ url_for("usage.usage_stats_api") }}')
+        .then(r => r.json())
+        .then(data => {
+            // Update stats if needed
+            console.log('Usage updated:', data);
+        });
+}, 30000);
+</script>
+{% endblock %}

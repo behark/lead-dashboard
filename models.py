@@ -45,6 +45,24 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
+    # Account security
+    failed_login_attempts = db.Column(db.Integer, default=0)
+    locked_until = db.Column(db.DateTime, nullable=True)
+    last_login = db.Column(db.DateTime, nullable=True)
+    
+    # Password reset
+    password_reset_token = db.Column(db.String(100), nullable=True, index=True)
+    password_reset_expires = db.Column(db.DateTime, nullable=True)
+    
+    # Email verification
+    email_verified = db.Column(db.Boolean, default=False)
+    email_verification_token = db.Column(db.String(100), nullable=True)
+    
+    # Two-Factor Authentication
+    two_factor_enabled = db.Column(db.Boolean, default=False)
+    two_factor_secret = db.Column(db.String(32), nullable=True)  # Base32 encoded secret
+    backup_codes = db.Column(db.Text, nullable=True)  # JSON array of backup codes
+    
     # Relationships
     assigned_leads = db.relationship('Lead', backref='assigned_user', lazy='dynamic')
     contact_logs = db.relationship('ContactLog', backref='user', lazy='dynamic')
@@ -68,6 +86,10 @@ class Lead(db.Model):
     __tablename__ = 'leads'
     
     id = db.Column(db.Integer, primary_key=True)
+    
+    # Multi-tenancy: Each lead belongs to an organization
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)  # Nullable for migration
+    
     name = db.Column(db.String(200), nullable=False, index=True)
     phone = db.Column(db.String(50))
     email = db.Column(db.String(120))
@@ -204,6 +226,118 @@ class Lead(db.Model):
     def schedule_followup(self, days=3):
         """Schedule next follow-up"""
         self.next_followup = datetime.now(timezone.utc) + timedelta(days=days)
+    
+    @classmethod
+    def get_contactable_leads(cls, limit=500, status_filter=None, organization_id=None):
+        """
+        Get leads that can be contacted (not opted out, have consent, have phone)
+        
+        Args:
+            limit: Maximum number of leads to return (default: 500)
+            status_filter: List of LeadStatus values to filter by (default: [NEW])
+            organization_id: Filter by organization (optional, for multi-tenancy)
+        
+        Returns:
+            Query result with contactable leads ordered by lead_score descending
+        """
+        if status_filter is None:
+            status_filter = [LeadStatus.NEW]
+        
+        query = cls.query.filter(
+            cls.status.in_(status_filter),
+            cls.phone.isnot(None),
+            cls.phone != '',
+            cls.marketing_opt_out == False,
+            cls.gdpr_consent == True
+        )
+        
+        # Multi-tenancy support
+        if organization_id is not None:
+            query = query.filter(cls.organization_id == organization_id)
+        
+        return query.order_by(cls.lead_score.desc()).limit(limit)
+    
+    @classmethod
+    def find_duplicate(cls, phone=None, name=None, organization_id=None):
+        """
+        Find duplicate leads by phone number or business name
+        
+        Args:
+            phone: Phone number to check (optional)
+            name: Business name to check (optional)
+            organization_id: Organization ID for multi-tenancy (optional)
+        
+        Returns:
+            Existing Lead if duplicate found, None otherwise
+        """
+        if not phone and not name:
+            return None
+        
+        query = cls.query
+        
+        # Multi-tenancy support
+        if organization_id is not None:
+            query = query.filter(cls.organization_id == organization_id)
+        
+        # Check by phone (most reliable)
+        if phone:
+            # Normalize phone: extract digits only (last 9 digits for matching)
+            normalized_phone = ''.join(c for c in phone if c.isdigit())
+            if normalized_phone:
+                # Get last 9 digits for matching (most phone numbers end with 9 digits)
+                phone_suffix = normalized_phone[-9:] if len(normalized_phone) >= 9 else normalized_phone
+                
+                # Get all leads and check phone numbers (simpler than complex SQL)
+                candidates = query.filter(cls.phone.isnot(None)).all()
+                for candidate in candidates:
+                    if candidate.phone:
+                        candidate_phone = ''.join(c for c in candidate.phone if c.isdigit())
+                        if candidate_phone and phone_suffix in candidate_phone:
+                            return candidate
+        
+        # Check by name (case-insensitive exact match)
+        if name:
+            name_lower = name.lower().strip()
+            candidates = query.filter(cls.name.isnot(None)).all()
+            for candidate in candidates:
+                if candidate.name and candidate.name.lower().strip() == name_lower:
+                    return candidate
+        
+        return None
+    
+    @classmethod
+    def create_or_update(cls, data, organization_id=None):
+        """
+        Create a new lead or update existing if duplicate found
+        
+        Args:
+            data: Dictionary with lead data (name, phone, email, etc.)
+            organization_id: Organization ID for multi-tenancy (optional)
+        
+        Returns:
+            Tuple of (lead, is_new) where is_new is True if created, False if updated
+        """
+        # Check for duplicates
+        existing = cls.find_duplicate(
+            phone=data.get('phone'),
+            name=data.get('name'),
+            organization_id=organization_id
+        )
+        
+        if existing:
+            # Update existing lead with new data (preserve important fields)
+            for key, value in data.items():
+                if key not in ['id', 'created_at', 'organization_id'] and value is not None:
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+            return existing, False
+        else:
+            # Create new lead
+            if organization_id:
+                data['organization_id'] = organization_id
+            new_lead = cls(**data)
+            db.session.add(new_lead)
+            return new_lead, True
 
 
 class ContactLog(db.Model):
@@ -240,6 +374,10 @@ class MessageTemplate(db.Model):
     __tablename__ = 'message_templates'
     
     id = db.Column(db.Integer, primary_key=True)
+    
+    # Multi-tenancy: Each template belongs to an organization (NULL = global template)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)
+    
     name = db.Column(db.String(100), nullable=False)
     channel = db.Column(db.Enum(ContactChannel), nullable=False)
     language = db.Column(db.String(10), default='sq')
@@ -273,6 +411,10 @@ class Sequence(db.Model):
     __tablename__ = 'sequences'
     
     id = db.Column(db.Integer, primary_key=True)
+    
+    # Multi-tenancy: Each sequence belongs to an organization (NULL = global sequence)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), nullable=True, index=True)
+    
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)

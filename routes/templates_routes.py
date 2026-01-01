@@ -1,6 +1,11 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort
+from sqlalchemy.exc import SQLAlchemyError
+import logging
+
+logger = logging.getLogger(__name__)
 from flask_login import login_required, current_user
 from models import db, MessageTemplate, Sequence, SequenceStep, ContactChannel, UserRole
+from utils.audit_logger import AuditLogger
 
 templates_bp = Blueprint('templates', __name__, url_prefix='/templates')
 
@@ -24,8 +29,21 @@ def create_template():
         content = request.form.get('content')
         variant = request.form.get('variant', 'A')
         
-        if not name or not channel or not content:
-            flash('Name, channel, and content are required.', 'danger')
+        # Input validation
+        if not name or not name.strip():
+            flash('Name is required.', 'danger')
+            return render_template('templates/create.html')
+        if len(name) > 200:
+            flash('Name must be 200 characters or less.', 'danger')
+            return render_template('templates/create.html')
+        if not channel:
+            flash('Channel is required.', 'danger')
+            return render_template('templates/create.html')
+        if not content or not content.strip():
+            flash('Content is required.', 'danger')
+            return render_template('templates/create.html')
+        if len(content) > 5000:
+            flash('Content must be 5000 characters or less.', 'danger')
             return render_template('templates/create.html')
         
         try:
@@ -41,10 +59,18 @@ def create_template():
             db.session.add(template)
             db.session.commit()
             
+            # Log template creation
+            AuditLogger.log_template_action('template_created', template.id, current_user.id,
+                                          details={'name': template.name, 'channel': template.channel.value})
+            
             flash('Template created.', 'success')
             return redirect(url_for('templates.list_templates'))
         except ValueError as e:
             flash(f'Error: {e}', 'danger')
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error creating template")
+            flash('Error creating template. Please try again.', 'danger')
     
     return render_template('templates/create.html')
 
@@ -52,20 +78,43 @@ def create_template():
 @templates_bp.route('/<int:template_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_template(template_id):
-    template = MessageTemplate.query.get_or_404(template_id)
+    template = db.session.get(MessageTemplate, template_id)
+    if not template:
+        abort(404)
     
     if request.method == 'POST':
-        template.name = request.form.get('name', template.name)
+        # Input validation
+        name = request.form.get('name', template.name)
+        content = request.form.get('content', template.content)
+        
+        if name and len(name) > 200:
+            flash('Name must be 200 characters or less.', 'danger')
+            return render_template('templates/edit.html', template=template)
+        if content and len(content) > 5000:
+            flash('Content must be 5000 characters or less.', 'danger')
+            return render_template('templates/edit.html', template=template)
+        
+        template.name = name
         template.language = request.form.get('language', template.language)
         template.category = request.form.get('category', template.category)
         template.subject = request.form.get('subject')
-        template.content = request.form.get('content', template.content)
+        template.content = content
         template.variant = request.form.get('variant', template.variant)
         template.is_active = request.form.get('is_active') == 'on'
         
-        db.session.commit()
-        flash('Template updated.', 'success')
-        return redirect(url_for('templates.list_templates'))
+        try:
+            db.session.commit()
+            
+            # Log template update
+            AuditLogger.log_template_action('template_updated', template_id, current_user.id)
+            
+            flash('Template updated.', 'success')
+            return redirect(url_for('templates.list_templates'))
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error updating template")
+            flash('Error updating template. Please try again.', 'danger')
+            return render_template('templates/edit.html', template=template)
     
     return render_template('templates/edit.html', template=template)
 
@@ -77,18 +126,32 @@ def delete_template(template_id):
         flash('Only admins can delete templates.', 'danger')
         return redirect(url_for('templates.list_templates'))
     
-    template = MessageTemplate.query.get_or_404(template_id)
-    db.session.delete(template)
-    db.session.commit()
+    template = db.session.get(MessageTemplate, template_id)
+    if not template:
+        abort(404)
     
-    flash('Template deleted.', 'success')
+    try:
+        template_id = template.id  # Store before deletion
+        db.session.delete(template)
+        db.session.commit()
+        
+        # Log template deletion
+        AuditLogger.log_template_action('template_deleted', template_id, current_user.id)
+        
+        flash('Template deleted.', 'success')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error deleting template")
+        flash('Error deleting template. Please try again.', 'danger')
     return redirect(url_for('templates.list_templates'))
 
 
 @templates_bp.route('/<int:template_id>/duplicate', methods=['POST'])
 @login_required
 def duplicate_template(template_id):
-    template = MessageTemplate.query.get_or_404(template_id)
+    template = db.session.get(MessageTemplate, template_id)
+    if not template:
+        abort(404)
     
     # Create A/B variant
     new_variant = 'B' if template.variant == 'A' else 'A'
@@ -102,11 +165,16 @@ def duplicate_template(template_id):
         content=template.content,
         variant=new_variant
     )
-    db.session.add(new_template)
-    db.session.commit()
-    
-    flash(f'Template duplicated as Variant {new_variant}.', 'success')
-    return redirect(url_for('templates.edit_template', template_id=new_template.id))
+    try:
+        db.session.add(new_template)
+        db.session.commit()
+        flash(f'Template duplicated as Variant {new_variant}.', 'success')
+        return redirect(url_for('templates.edit_template', template_id=new_template.id))
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error duplicating template")
+        flash('Error duplicating template. Please try again.', 'danger')
+        return redirect(url_for('templates.list_templates'))
 
 
 # Sequences
@@ -128,12 +196,16 @@ def create_sequence():
             flash('Name is required.', 'danger')
             return render_template('templates/create_sequence.html')
         
-        sequence = Sequence(name=name, description=description)
-        db.session.add(sequence)
-        db.session.commit()
-        
-        flash('Sequence created. Now add steps.', 'success')
-        return redirect(url_for('templates.edit_sequence', sequence_id=sequence.id))
+        try:
+            sequence = Sequence(name=name, description=description)
+            db.session.add(sequence)
+            db.session.commit()
+            flash('Sequence created. Now add steps.', 'success')
+            return redirect(url_for('templates.edit_sequence', sequence_id=sequence.id))
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error creating sequence")
+            flash('Error creating sequence. Please try again.', 'danger')
     
     return render_template('templates/create_sequence.html')
 
@@ -141,7 +213,9 @@ def create_sequence():
 @templates_bp.route('/sequences/<int:sequence_id>', methods=['GET', 'POST'])
 @login_required
 def edit_sequence(sequence_id):
-    sequence = Sequence.query.get_or_404(sequence_id)
+    sequence = db.session.get(Sequence, sequence_id)
+    if not sequence:
+        abort(404)
     templates = MessageTemplate.query.filter_by(is_active=True).all()
     
     if request.method == 'POST':
@@ -149,8 +223,13 @@ def edit_sequence(sequence_id):
         sequence.description = request.form.get('description', sequence.description)
         sequence.is_active = request.form.get('is_active') == 'on'
         
-        db.session.commit()
-        flash('Sequence updated.', 'success')
+        try:
+            db.session.commit()
+            flash('Sequence updated.', 'success')
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.exception("Error updating sequence")
+            flash('Error updating sequence. Please try again.', 'danger')
     
     steps = sequence.steps.order_by(SequenceStep.step_number).all()
     
@@ -165,7 +244,9 @@ def edit_sequence(sequence_id):
 @templates_bp.route('/sequences/<int:sequence_id>/add-step', methods=['POST'])
 @login_required
 def add_sequence_step(sequence_id):
-    sequence = Sequence.query.get_or_404(sequence_id)
+    sequence = db.session.get(Sequence, sequence_id)
+    if not sequence:
+        abort(404)
     
     # Get next step number
     max_step = db.session.query(db.func.max(SequenceStep.step_number)).filter_by(
@@ -188,10 +269,13 @@ def add_sequence_step(sequence_id):
         )
         db.session.add(step)
         db.session.commit()
-        
         flash('Step added.', 'success')
     except (ValueError, TypeError) as e:
         flash(f'Error: {e}', 'danger')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error adding sequence step")
+        flash('Error adding step. Please try again.', 'danger')
     
     return redirect(url_for('templates.edit_sequence', sequence_id=sequence_id))
 
@@ -199,7 +283,9 @@ def add_sequence_step(sequence_id):
 @templates_bp.route('/sequences/<int:sequence_id>/step/<int:step_id>/delete', methods=['POST'])
 @login_required
 def delete_sequence_step(sequence_id, step_id):
-    step = SequenceStep.query.get_or_404(step_id)
+    step = db.session.get(SequenceStep, step_id)
+    if not step:
+        abort(404)
     
     if step.sequence_id != sequence_id:
         flash('Step not found in this sequence.', 'danger')
@@ -215,8 +301,13 @@ def delete_sequence_step(sequence_id, step_id):
     for i, s in enumerate(remaining_steps, 1):
         s.step_number = i
     
-    db.session.commit()
-    flash('Step deleted.', 'success')
+    try:
+        db.session.commit()
+        flash('Step deleted.', 'success')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error deleting sequence step")
+        flash('Error deleting step. Please try again.', 'danger')
     
     return redirect(url_for('templates.edit_sequence', sequence_id=sequence_id))
 
@@ -224,7 +315,9 @@ def delete_sequence_step(sequence_id, step_id):
 @templates_bp.route('/<int:template_id>/set_default', methods=['POST'])
 @login_required
 def set_default_template(template_id):
-    template = MessageTemplate.query.get_or_404(template_id)
+    template = db.session.get(MessageTemplate, template_id)
+    if not template:
+        abort(404)
     
     # Set default per (channel, language)
     MessageTemplate.query.filter_by(
@@ -235,9 +328,13 @@ def set_default_template(template_id):
     # Set this template as default
     template.is_default = True
     
-    db.session.commit()
-    
-    flash(f'{template.name} set as default for {template.channel.value.upper()} ({template.language}).', 'success')
+    try:
+        db.session.commit()
+        flash(f'{template.name} set as default for {template.channel.value.upper()} ({template.language}).', 'success')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error setting default template")
+        flash('Error setting default template. Please try again.', 'danger')
     return redirect(url_for('templates.list_templates'))
 
 
@@ -248,17 +345,23 @@ def delete_sequence(sequence_id):
         flash('Only admins can delete sequences.', 'danger')
         return redirect(url_for('templates.list_sequences'))
     
-    sequence = Sequence.query.get_or_404(sequence_id)
+    sequence = db.session.get(Sequence, sequence_id)
+    if not sequence:
+        abort(404)
     
     # Remove sequence from leads
     from models import Lead
-    Lead.query.filter_by(sequence_id=sequence_id).update({'sequence_id': None, 'sequence_step': 0})
-    
-    # Delete steps
-    SequenceStep.query.filter_by(sequence_id=sequence_id).delete()
-    
-    db.session.delete(sequence)
-    db.session.commit()
-    
-    flash('Sequence deleted.', 'success')
+    try:
+        Lead.query.filter_by(sequence_id=sequence_id).update({'sequence_id': None, 'sequence_step': 0})
+        
+        # Delete steps
+        SequenceStep.query.filter_by(sequence_id=sequence_id).delete()
+        
+        db.session.delete(sequence)
+        db.session.commit()
+        flash('Sequence deleted.', 'success')
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error deleting sequence")
+        flash('Error deleting sequence. Please try again.', 'danger')
     return redirect(url_for('templates.list_sequences'))

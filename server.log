@@ -11,3 +11,17 @@ Error validating environment: 'Config' object has no attribute 'DEBUG'
  * Debugger is active!
 /home/behar/Desktop/New Folder (10)/lead_dashboard/app.py:47: LegacyAPIWarning: The Query.get() method is considered legacy as of the 1.x series of SQLAlchemy and becomes a legacy construct in 2.0. The method is now available as Session.get() (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
   return User.query.get(int(user_id))
+2026-01-01 04:28:57 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/flask_limiter/extension.py:336: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(
+ * Debugger is active!
+2026-01-01 04:29:01 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+ * Debugger is active!
+2026-01-01 04:29:03 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+ * Debugger is active!
+2026-01-01 04:29:05 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+ * Debugger is active!

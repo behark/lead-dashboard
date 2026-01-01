@@ -9,7 +9,7 @@ class SequenceService:
     @staticmethod
     def enroll_lead(lead, sequence_id):
         """Enroll a lead in a sequence"""
-        sequence = Sequence.query.get(sequence_id)
+        sequence = db.session.get(Sequence, sequence_id)
         if not sequence or not sequence.is_active:
             return False
         
@@ -66,7 +66,7 @@ class SequenceService:
         if not lead.sequence_id:
             return {'success': False, 'error': 'Lead not in sequence'}
         
-        sequence = Sequence.query.get(lead.sequence_id)
+        sequence = db.session.get(Sequence, lead.sequence_id)
         if not sequence or not sequence.is_active:
             return {'success': False, 'error': 'Sequence inactive'}
         

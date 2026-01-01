@@ -3,11 +3,17 @@ Bulk operations routes - Send messages to multiple leads
 """
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
-from models import db, Lead, ContactLog, MessageTemplate, LeadStatus, LeadTemperature, ContactChannel, UserRole
+from models import db, Lead, ContactLog, MessageTemplate, LeadStatus, LeadTemperature, ContactChannel, UserRole, BulkJob
 from services.contact_service import ContactService
 from services.phone_service import format_phone_international, validate_phone
+from utils.job_queue import enqueue_job, get_job_status
+from utils.audit_logger import AuditLogger
 from datetime import datetime, timezone
+from sqlalchemy.exc import SQLAlchemyError
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 bulk_bp = Blueprint('bulk', __name__, url_prefix='/bulk')
 
@@ -27,18 +33,72 @@ def bulk_send():
         template_id = request.form.get('template_id')
         channel = request.form.get('channel', 'whatsapp')
         dry_run = request.form.get('dry_run') == 'on'
+        use_background = request.form.get('use_background', 'true') == 'true'  # Default to background
         
         if not lead_ids:
             flash('No leads selected.', 'warning')
             return redirect(url_for('bulk.bulk_send'))
         
+        # Convert lead_ids to integers
+        try:
+            lead_ids = [int(id) for id in lead_ids]
+        except ValueError:
+            flash('Invalid lead IDs.', 'danger')
+            return redirect(url_for('bulk.bulk_send'))
+        
         # Get leads
         leads = Lead.query.filter(Lead.id.in_(lead_ids)).all()
+        
+        # Check if we should use background job processing
+        if use_background and len(leads) > 10:  # Use background for >10 leads
+            # Create BulkJob record
+            job = BulkJob(
+                user_id=current_user.id,
+                job_type='send_message',
+                status='pending',
+                total_items=len(leads),
+                parameters={
+                    'lead_ids': lead_ids,
+                    'template_id': int(template_id) if template_id else None,
+                    'channel': channel,
+                    'dry_run': dry_run
+                }
+            )
+            db.session.add(job)
+            db.session.commit()
+            
+            # Enqueue background job
+            from jobs.bulk_send_job import bulk_send_job
+            rq_job = enqueue_job(
+                bulk_send_job,
+                job.id,
+                lead_ids,
+                int(template_id) if template_id else None,
+                channel,
+                current_user.id,
+                dry_run,
+                job_timeout='30m'  # 30 minute timeout for large batches
+            )
+            
+            if rq_job:
+                # Log bulk action
+                AuditLogger.log_bulk_action('bulk_send_started', job.id, current_user.id,
+                                          details={'lead_count': len(leads), 'channel': channel})
+                
+                flash(f'Bulk send job started! Processing {len(leads)} leads in the background. Job ID: {job.id}', 'success')
+                return redirect(url_for('bulk.job_status', job_id=job.id))
+            else:
+                # Fallback to synchronous if queue not available
+                flash('Background processing not available, processing synchronously...', 'warning')
+                use_background = False
+        
+        # Synchronous processing (fallback or small batches)
+        if not use_background or len(leads) <= 10:
         
         # Get template (fallback to default for channel)
         template = None
         if template_id:
-            template = MessageTemplate.query.get(template_id)
+            template = db.session.get(MessageTemplate, template_id)
         else:
             try:
                 channel_enum = ContactChannel(channel)
@@ -55,83 +115,125 @@ def bulk_send():
             'sent': 0,
             'failed': 0,
             'skipped': 0,
-            'errors': []
+            'errors': [],
+            'successful_leads': [],
+            'failed_leads': []
         }
         
-        for i, lead in enumerate(leads):
-            # Rate limiting
-            if i > 0 and i % MESSAGES_PER_BATCH == 0:
+        # Track successful operations for rollback if needed
+        successful_operations = []
+        
+        try:
+            for i, lead in enumerate(leads):
+                # Rate limiting
+                # NOTE: This blocks the request thread. For production, consider using
+                # background job processing (Celery, RQ, etc.) for better UX and scalability
+                if i > 0 and i % MESSAGES_PER_BATCH == 0:
+                    if not dry_run:
+                        time.sleep(DELAY_BETWEEN_MESSAGES * 10)  # Longer pause between batches
+
+                # Validate phone
+                is_valid, error = validate_phone(lead.phone, lead.country)
+                if not is_valid:
+                    results['skipped'] += 1
+                    results['errors'].append(f"{lead.name}: {error}")
+                    continue
+
+                # Select best performing template variant (A/B testing)
+                selected_template = template
+                if template:
+                    # Try to find the best variant
+                    base_name = template.name.split(' - ')[0]  # Remove variant suffix
+                    best_variant = ContactService.select_template_variant(base_name, ContactChannel.WHATSAPP if channel == 'whatsapp' else ContactChannel.EMAIL if channel == 'email' else ContactChannel.SMS)
+                    if best_variant:
+                        selected_template = best_variant
+
+                    # Apply AI personalization
+                    selected_template = ContactService.get_personalized_template(selected_template, lead)
+
+                # Get message
+                if selected_template:
+                    message = selected_template.content
+                    template_id_to_use = selected_template.id
+                    ab_variant = selected_template.variant
+                else:
+                    message = lead.first_message or f"Hi! I saw {lead.name} on Google and wanted to reach out."
+                    template_id_to_use = template_id
+                    ab_variant = None
+
+                if dry_run:
+                    results['sent'] += 1
+                    continue
+
+                # Send based on channel with error handling
+                result = None
+                try:
+                    if channel == 'whatsapp':
+                        result = ContactService.send_whatsapp(
+                            lead, message,
+                            template_id=template_id_to_use,
+                            user_id=current_user.id,
+                            ab_variant=ab_variant
+                        )
+                    elif channel == 'email':
+                        subject = selected_template.subject if selected_template and hasattr(selected_template, 'subject') and selected_template.subject else f"Hello from a business partner"
+                        result = ContactService.send_email(
+                            lead, subject, message,
+                            template_id=template_id_to_use,
+                            user_id=current_user.id,
+                            ab_variant=ab_variant
+                        )
+                    elif channel == 'sms':
+                        result = ContactService.send_sms(
+                            lead, message,
+                            template_id=template_id_to_use,
+                            user_id=current_user.id,
+                            ab_variant=ab_variant
+                        )
+                    
+                    if result and result.get('success'):
+                        results['sent'] += 1
+                        results['successful_leads'].append(lead.id)
+                        successful_operations.append(lead.id)
+                    else:
+                        results['failed'] += 1
+                        results['failed_leads'].append(lead.id)
+                        error = result.get('error', 'Unknown error') if result else 'Send failed'
+                        results['errors'].append(f"{lead.name}: {error}")
+                        
+                except Exception as e:
+                    # Log the error but continue with other leads
+                    logger.exception(f"Error sending to lead {lead.id}: {e}")
+                    results['failed'] += 1
+                    results['failed_leads'].append(lead.id)
+                    results['errors'].append(f"{lead.name}: {str(e)}")
+                
+                # Rate limiting between messages
                 if not dry_run:
-                    time.sleep(DELAY_BETWEEN_MESSAGES * 10)  # Longer pause between batches
-
-            # Validate phone
-            is_valid, error = validate_phone(lead.phone, lead.country)
-            if not is_valid:
-                results['skipped'] += 1
-                results['errors'].append(f"{lead.name}: {error}")
-                continue
-
-            # Select best performing template variant (A/B testing)
-            selected_template = template
-            if template:
-                # Try to find the best variant
-                base_name = template.name.split(' - ')[0]  # Remove variant suffix
-                best_variant = ContactService.select_template_variant(base_name, ContactChannel.WHATSAPP if channel == 'whatsapp' else ContactChannel.EMAIL if channel == 'email' else ContactChannel.SMS)
-                if best_variant:
-                    selected_template = best_variant
-
-                # Apply AI personalization
-                selected_template = ContactService.get_personalized_template(selected_template, lead)
-
-            # Get message
-            if selected_template:
-                message = selected_template.content
-                template_id_to_use = selected_template.id
-                ab_variant = selected_template.variant
-            else:
-                message = lead.first_message or f"Hi! I saw {lead.name} on Google and wanted to reach out."
-                template_id_to_use = template_id
-                ab_variant = None
-
-            if dry_run:
-                results['sent'] += 1
-                continue
-
-            # Send based on channel
-            result = None
-            if channel == 'whatsapp':
-                result = ContactService.send_whatsapp(
-                    lead, message,
-                    template_id=template_id_to_use,
-                    user_id=current_user.id,
-                    ab_variant=ab_variant
-                )
-            elif channel == 'email':
-                subject = selected_template.subject if selected_template and hasattr(selected_template, 'subject') and selected_template.subject else f"Hello from a business partner"
-                result = ContactService.send_email(
-                    lead, subject, message,
-                    template_id=template_id_to_use,
-                    user_id=current_user.id,
-                    ab_variant=ab_variant
-                )
-            elif channel == 'sms':
-                result = ContactService.send_sms(
-                    lead, message,
-                    template_id=template_id_to_use,
-                    user_id=current_user.id,
-                    ab_variant=ab_variant
-                )
+                    time.sleep(DELAY_BETWEEN_MESSAGES)
             
-            if result and result.get('success'):
-                results['sent'] += 1
-            else:
-                results['failed'] += 1
-                error = result.get('error', 'Unknown error') if result else 'Send failed'
-                results['errors'].append(f"{lead.name}: {error}")
-            
-            # Rate limiting between messages
-            if not dry_run:
-                time.sleep(DELAY_BETWEEN_MESSAGES)
+            # Commit all successful operations
+            # Note: ContactService methods handle their own commits, but we ensure
+            # database consistency here
+            try:
+                db.session.commit()
+            except SQLAlchemyError as e:
+                logger.exception("Database error during bulk send commit")
+                db.session.rollback()
+                # Mark all operations as failed since we can't verify state
+                results['failed'] += results['sent']
+                results['sent'] = 0
+                results['errors'].append(f"Database error: {str(e)}")
+                
+        except Exception as e:
+            # Critical error - rollback any uncommitted changes
+            logger.exception(f"Critical error in bulk send: {e}")
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            results['errors'].append(f"Critical error: {str(e)}")
+            flash(f"Bulk send encountered an error: {str(e)}", 'danger')
         
         if dry_run:
             flash(f"DRY RUN: Would send to {results['sent']} leads. Skipped: {results['skipped']}", 'info')
@@ -143,13 +245,7 @@ def bulk_send():
     
     # GET - Show selection page
     # Get leads that can be contacted (not opted out, have consent)
-    leads = Lead.query.filter(
-        Lead.status.in_([LeadStatus.NEW]),
-        Lead.phone.isnot(None),
-        Lead.phone != '',
-        Lead.marketing_opt_out == False,
-        Lead.gdpr_consent == True
-    ).order_by(Lead.lead_score.desc()).limit(500).all()
+    leads = Lead.get_contactable_leads(limit=500).all()
     
     # Get templates
     templates = MessageTemplate.query.filter_by(is_active=True).all()
@@ -201,13 +297,13 @@ def preview_message():
     lead_id = request.form.get('lead_id')
     template_id = request.form.get('template_id')
     
-    lead = Lead.query.get(lead_id)
+    lead = db.session.get(Lead, lead_id)
     if not lead:
         return jsonify({'error': 'Lead not found'}), 404
     
     template = None
     if template_id:
-        template = MessageTemplate.query.get(template_id)
+        template = db.session.get(MessageTemplate, template_id)
     if not template:
         template = MessageTemplate.query.filter_by(
             channel=ContactChannel.WHATSAPP,
@@ -289,13 +385,7 @@ def smart_send():
     """Smart bulk send with progressive sending, scheduling, and smart templates"""
     
     # Get leads that can be contacted
-    leads = Lead.query.filter(
-        Lead.status.in_([LeadStatus.NEW]),
-        Lead.phone.isnot(None),
-        Lead.phone != '',
-        Lead.marketing_opt_out == False,
-        Lead.gdpr_consent == True
-    ).order_by(Lead.lead_score.desc()).limit(500).all()
+    leads = Lead.get_contactable_leads(limit=500).all()
     
     # Group by temperature
     hot_leads = [l for l in leads if l.temperature == LeadTemperature.HOT]

@@ -230,6 +230,18 @@
                         <i class="bi bi-clock-history"></i> Follow-ups
                     </a>
                     <hr class="border-secondary my-2">
+                    <a class="nav-link {% if 'billing' in request.endpoint %}active{% endif %}" href="{{ url_for('billing.billing_dashboard') }}">
+                        <i class="bi bi-credit-card"></i> Billing
+                    </a>
+                    <a class="nav-link {% if 'usage' in request.endpoint %}active{% endif %}" href="{{ url_for('usage.usage_dashboard') }}">
+                        <i class="bi bi-graph-up-arrow"></i> Usage
+                    </a>
+                    <a class="nav-link {% if 'team' in request.endpoint %}active{% endif %}" href="{{ url_for('team.team_dashboard') }}">
+                        <i class="bi bi-people"></i> Team
+                    </a>
+                    <a class="nav-link {% if 'gdpr' in request.endpoint %}active{% endif %}" href="{{ url_for('gdpr.gdpr_dashboard') }}">
+                        <i class="bi bi-shield-check"></i> GDPR
+                    </a>
                     <a class="nav-link {% if 'analytics' in request.endpoint %}active{% endif %}" href="{{ url_for('analytics.dashboard') }}">
                         <i class="bi bi-graph-up"></i> Analytics
                     </a>

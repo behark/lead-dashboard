@@ -5,7 +5,18 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # SECRET_KEY validation - fail fast in production if not set
+    _secret_key = os.environ.get('SECRET_KEY')
+    if not _secret_key:
+        if os.environ.get('FLASK_ENV') == 'production':
+            raise ValueError("SECRET_KEY must be set in production environment")
+        # Generate random key for development
+        import secrets
+        _secret_key = secrets.token_hex(32)
+        import warnings
+        warnings.warn("Using auto-generated SECRET_KEY for development. Set SECRET_KEY in production!")
+    
+    SECRET_KEY = _secret_key
     
     # Database
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
@@ -54,6 +65,31 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     DEBUG = False
     
+    # Security
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    
+    # Stripe
+    STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')
+    STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
+    STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET')
+    STRIPE_PRICE_ID_STARTER_MONTHLY = os.environ.get('STRIPE_PRICE_ID_STARTER_MONTHLY')
+    STRIPE_PRICE_ID_STARTER_YEARLY = os.environ.get('STRIPE_PRICE_ID_STARTER_YEARLY')
+    STRIPE_PRICE_ID_PROFESSIONAL_MONTHLY = os.environ.get('STRIPE_PRICE_ID_PROFESSIONAL_MONTHLY')
+    STRIPE_PRICE_ID_PROFESSIONAL_YEARLY = os.environ.get('STRIPE_PRICE_ID_PROFESSIONAL_YEARLY')
+    STRIPE_PRICE_ID_ENTERPRISE_MONTHLY = os.environ.get('STRIPE_PRICE_ID_ENTERPRISE_MONTHLY')
+    STRIPE_PRICE_ID_ENTERPRISE_YEARLY = os.environ.get('STRIPE_PRICE_ID_ENTERPRISE_YEARLY')
+    
+    # Base URL
+    BASE_URL = os.environ.get('BASE_URL', 'http://localhost:5000')
+    
+    # Redis
+    REDIS_URL = os.environ.get('REDIS_URL')
+    
+    # Rate Limiting
+    RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'True') == 'True'
+
 
 config = {
     'development': DevelopmentConfig,

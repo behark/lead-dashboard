@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <h1 class="mb-4">Privacy Policy</h1>
+            <p class="text-muted">Last updated: January 1, 2026</p>
+            
+            <hr>
+            
+            <section class="mb-5">
+                <h2>1. Introduction</h2>
+                <p>
+                    We respect your privacy and are committed to protecting your personal data. 
+                    This privacy policy explains how we collect, use, and safeguard your information 
+                    when you use our lead generation and management platform.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>2. Data We Collect</h2>
+                <h4>2.1 Information You Provide</h4>
+                <ul>
+                    <li>Account information (username, email, password)</li>
+                    <li>Organization details</li>
+                    <li>Payment information (processed securely via Stripe)</li>
+                </ul>
+                
+                <h4>2.2 Lead Data</h4>
+                <ul>
+                    <li>Business names and contact information</li>
+                    <li>Phone numbers and email addresses</li>
+                    <li>Location data (city, country, address)</li>
+                    <li>Business category and ratings</li>
+                </ul>
+                
+                <h4>2.3 Usage Data</h4>
+                <ul>
+                    <li>How you use our platform</li>
+                    <li>Messages sent and received</li>
+                    <li>API calls and interactions</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>3. How We Use Your Data</h2>
+                <p>We use your data to:</p>
+                <ul>
+                    <li>Provide and improve our services</li>
+                    <li>Process payments and manage subscriptions</li>
+                    <li>Send important service updates</li>
+                    <li>Comply with legal obligations</li>
+                    <li>Prevent fraud and abuse</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>4. Data Sharing</h2>
+                <p>We do not sell your data. We may share data with:</p>
+                <ul>
+                    <li><strong>Service Providers:</strong> Stripe (payments), hosting providers</li>
+                    <li><strong>Legal Requirements:</strong> When required by law</li>
+                    <li><strong>Business Transfers:</strong> In case of merger or acquisition</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>5. Your Rights (GDPR)</h2>
+                <p>Under GDPR, you have the right to:</p>
+                <ul>
+                    <li><strong>Access:</strong> Request a copy of your data</li>
+                    <li><strong>Rectification:</strong> Correct inaccurate data</li>
+                    <li><strong>Erasure:</strong> Request deletion of your data</li>
+                    <li><strong>Portability:</strong> Export your data</li>
+                    <li><strong>Object:</strong> Object to processing</li>
+                    <li><strong>Restrict:</strong> Restrict processing</li>
+                </ul>
+                <p>To exercise these rights, contact us or use the GDPR dashboard in your account.</p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>6. Data Security</h2>
+                <p>We implement appropriate security measures:</p>
+                <ul>
+                    <li>Encryption in transit (HTTPS/SSL)</li>
+                    <li>Encrypted database storage</li>
+                    <li>Access controls and authentication</li>
+                    <li>Regular security audits</li>
+                </ul>
+            </section>
+            
+            <section class="mb-5">
+                <h2>7. Data Retention</h2>
+                <p>
+                    We retain your data for as long as necessary to provide our services 
+                    or as required by law. You can request deletion at any time.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>8. Cookies</h2>
+                <p>
+                    We use cookies for authentication and session management. 
+                    See our <a href="{{ url_for('gdpr.cookie_policy') }}">Cookie Policy</a> for details.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>9. International Transfers</h2>
+                <p>
+                    Your data may be transferred to and processed in countries outside the EU. 
+                    We ensure appropriate safeguards are in place.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>10. Children's Privacy</h2>
+                <p>
+                    Our service is not intended for users under 16. We do not knowingly collect 
+                    data from children.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>11. Changes to This Policy</h2>
+                <p>
+                    We may update this policy from time to time. We will notify you of significant changes.
+                </p>
+            </section>
+            
+            <section class="mb-5">
+                <h2>12. Contact Us</h2>
+                <p>
+                    For privacy-related questions, contact us at:
+                    <br><strong>Email:</strong> privacy@yourdomain.com
+                    <br><strong>Address:</strong> [Your Business Address]
+                </p>
+            </section>
+            
+            <hr>
+            
+            <div class="text-center mt-5">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

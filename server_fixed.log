@@ -1,0 +1,10 @@
+2026-01-01 04:29:11 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+ * Serving Flask app 'app'
+ * Debug mode: on
+2026-01-01 04:29:12 - app - INFO - Logging initialized at level DEBUG
+Error validating environment: 'Config' object has no attribute 'DEBUG'
+ * Debugger is active!
+2026-01-01 04:29:30 - app - INFO - Logging initialized at level DEBUG
+SECRET_KEY is not set - using default (not secure for production)
+ * Debugger is active!

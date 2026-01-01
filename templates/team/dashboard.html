@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}Team Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .member-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        transition: all 0.3s;
+    }
+    .member-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    .role-badge {
+        font-size: 0.75rem;
+        padding: 4px 12px;
+    }
+    .permission-icon {
+        width: 20px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>👥 Team Management</h2>
+        {% if can_manage_team %}
+        <a href="{{ url_for('team.invite_member') }}" class="btn btn-primary">
+            <i class="bi bi-person-plus"></i> Invite Member
+        </a>
+        {% endif %}
+    </div>
+    
+    <!-- Team Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Team Members</h6>
+                    <h2 class="mb-0">{{ members|length }} / {{ max_users if max_users > 0 else '∞' }}</h2>
+                    {% if not can_add_member and max_users > 0 %}
+                    <small class="text-danger">Limit reached</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Active Members</h6>
+                    <h2 class="mb-0">{{ members|length }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Your Role</h6>
+                    <span class="badge bg-primary role-badge">{{ current_member.role.value|title }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% if not can_add_member and max_users > 0 %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle"></i> 
+        You've reached your user limit ({{ max_users }} users). 
+        <a href="{{ url_for('billing.pricing') }}" class="alert-link">Upgrade your plan</a> to add more team members.
+    </div>
+    {% endif %}
+    
+    <!-- Team Members -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Team Members</h5>
+        </div>
+        <div class="card-body">
+            {% if members %}
+            <div class="row g-3">
+                {% for member in members %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="member-card p-3 {% if member.id == current_member.id %}border-primary{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="mb-1">
+                                    {{ member.user.username }}
+                                    {% if member.id == current_member.id %}
+                                    <span class="badge bg-info">You</span>
+                                    {% endif %}
+                                </h6>
+                                <p class="text-muted small mb-0">{{ member.user.email }}</p>
+                            </div>
+                            <span class="badge 
+                                {% if member.role.value == 'owner' %}bg-danger
+                                {% elif member.role.value == 'admin' %}bg-warning text-dark
+                                {% elif member.role.value == 'member' %}bg-primary
+                                {% else %}bg-secondary{% endif %} role-badge">
+                                {{ member.role.value|title }}
+                            </span>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <small class="text-muted d-block mb-2">Permissions:</small>
+                            <div class="d-flex flex-wrap gap-2">
+                                <span class="badge {% if member.can_manage_leads %}bg-success{% else %}bg-secondary{% endif %}">
+                                    <i class="bi bi-{% if member.can_manage_leads %}check{% else %}x{% endif %}-circle"></i> Leads
+                                </span>
+                                <span class="badge {% if member.can_send_messages %}bg-success{% else %}bg-secondary{% endif %}">
+                                    <i class="bi bi-{% if member.can_send_messages %}check{% else %}x{% endif %}-circle"></i> Messages
+                                </span>
+                                <span class="badge {% if member.can_view_analytics %}bg-success{% else %}bg-secondary{% endif %}">
+                                    <i class="bi bi-{% if member.can_view_analytics %}check{% else %}x{% endif %}-circle"></i> Analytics
+                                </span>
+                                <span class="badge {% if member.can_manage_templates %}bg-success{% else %}bg-secondary{% endif %}">
+                                    <i class="bi bi-{% if member.can_manage_templates %}check{% else %}x{% endif %}-circle"></i> Templates
+                                </span>
+                                {% if member.can_manage_team %}
+                                <span class="badge bg-info">
+                                    <i class="bi bi-check-circle"></i> Team
+                                </span>
+                                {% endif %}
+                                {% if member.can_manage_billing %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-check-circle"></i> Billing
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="small text-muted mb-2">
+                            <i class="bi bi-calendar"></i> Joined: {{ member.joined_at.strftime('%B %d, %Y') if member.joined_at else 'N/A' }}
+                        </div>
+                        
+                        {% if can_manage_team and member.id != current_member.id %}
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-sm btn-outline-primary" onclick="editMember({{ member.id }})">
+                                <i class="bi bi-pencil"></i> Edit
+                            </button>
+                            {% if member.role.value != 'owner' or current_member.role.value == 'owner' %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="removeMember({{ member.id }})">
+                                <i class="bi bi-person-x"></i> Remove
+                            </button>
+                            {% endif %}
+                            {% if current_member.role.value == 'owner' and member.role.value != 'owner' %}
+                            <button class="btn btn-sm btn-outline-warning" onclick="transferOwnership({{ member.id }})">
+                                <i class="bi bi-arrow-up-circle"></i> Make Owner
+                            </button>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4">No team members yet.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Leave Organization -->
+    {% if current_member.role.value != 'owner' or members|length > 1 %}
+    <div class="card mt-4">
+        <div class="card-body">
+            <h6 class="text-danger">Danger Zone</h6>
+            <p class="text-muted small">Leave this organization. You can be re-invited later.</p>
+            <button class="btn btn-outline-danger" onclick="leaveOrganization()">
+                <i class="bi bi-box-arrow-right"></i> Leave Organization
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Edit Member Modal -->
+<div class="modal fade" id="editMemberModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Team Member</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editMemberForm">
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select name="role" class="form-select" id="memberRole">
+                            <option value="viewer">Viewer</option>
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                            <option value="owner">Owner</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Permissions</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permLeads" name="can_manage_leads">
+                            <label class="form-check-label" for="permLeads">Manage Leads</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permMessages" name="can_send_messages">
+                            <label class="form-check-label" for="permMessages">Send Messages</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permAnalytics" name="can_view_analytics">
+                            <label class="form-check-label" for="permAnalytics">View Analytics</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permTemplates" name="can_manage_templates">
+                            <label class="form-check-label" for="permTemplates">Manage Templates</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permTeam" name="can_manage_team">
+                            <label class="form-check-label" for="permTeam">Manage Team</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="permBilling" name="can_manage_billing">
+                            <label class="form-check-label" for="permBilling">Manage Billing</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveMember()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let editingMemberId = null;
+
+function editMember(memberId) {
+    editingMemberId = memberId;
+    // Fetch member data and populate form
+    fetch(`/team/member/${memberId}/update`, {method: 'GET'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.role) document.getElementById('memberRole').value = data.role;
+            if (data.permissions) {
+                document.getElementById('permLeads').checked = data.permissions.can_manage_leads || false;
+                document.getElementById('permMessages').checked = data.permissions.can_send_messages || false;
+                document.getElementById('permAnalytics').checked = data.permissions.can_view_analytics || false;
+                document.getElementById('permTemplates').checked = data.permissions.can_manage_templates || false;
+                document.getElementById('permTeam').checked = data.permissions.can_manage_team || false;
+                document.getElementById('permBilling').checked = data.permissions.can_manage_billing || false;
+            }
+            new bootstrap.Modal(document.getElementById('editMemberModal')).show();
+        })
+        .catch(err => {
+            // If GET not available, just show modal
+            new bootstrap.Modal(document.getElementById('editMemberModal')).show();
+        });
+}
+
+function saveMember() {
+    if (!editingMemberId) return;
+    
+    const form = document.getElementById('editMemberForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        role: formData.get('role'),
+        permissions: {
+            can_manage_leads: formData.get('can_manage_leads') === 'on',
+            can_send_messages: formData.get('can_send_messages') === 'on',
+            can_view_analytics: formData.get('can_view_analytics') === 'on',
+            can_manage_templates: formData.get('can_manage_templates') === 'on',
+            can_manage_team: formData.get('can_manage_team') === 'on',
+            can_manage_billing: formData.get('can_manage_billing') === 'on'
+        }
+    };
+    
+    fetch(`/team/member/${editingMemberId}/update`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to update member'));
+        }
+    });
+}
+
+function removeMember(memberId) {
+    if (!confirm('Are you sure you want to remove this team member?')) return;
+    
+    fetch(`/team/member/${memberId}/remove`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to remove member'));
+        }
+    });
+}
+
+function transferOwnership(memberId) {
+    if (!confirm('Are you sure you want to transfer ownership? You will become an admin.')) return;
+    
+    fetch(`/team/member/${memberId}/transfer-ownership`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to transfer ownership'));
+        }
+    });
+}
+
+function leaveOrganization() {
+    if (!confirm('Are you sure you want to leave this organization?')) return;
+    
+    fetch('{{ url_for("team.leave_organization") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                location.reload();
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Failed to leave organization'));
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Team Activity{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>📊 Team Activity</h2>
+        <a href="{{ url_for('team.team_dashboard') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Team
+        </a>
+    </div>
+    
+    <!-- Activity Summary -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Total Activities</h6>
+                    <h3 class="mb-0">{{ activity|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Active Members</h6>
+                    <h3 class="mb-0">{{ user_activity|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Leads Created</h6>
+                    <h3 class="mb-0">
+                        {{ activity|selectattr('usage_type', 'equalto', 'lead_created')|list|length }}
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">Messages Sent</h6>
+                    <h3 class="mb-0">
+                        {{ activity|selectattr('usage_type', 'equalto', 'message_sent')|list|length }}
+                    </h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Activity by Member -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Activity by Team Member</h5>
+        </div>
+        <div class="card-body">
+            {% if user_activity %}
+            <div class="row g-3">
+                {% for user_id, records in user_activity.items() %}
+                {% set member = members.get(user_id) %}
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="mb-3">
+                                {% if member %}
+                                {{ member.user.username }}
+                                <span class="badge bg-secondary">{{ member.role.value|title }}</span>
+                                {% else %}
+                                User #{{ user_id }}
+                                {% endif %}
+                            </h6>
+                            
+                            <div class="small">
+                                <div class="mb-2">
+                                    <strong>{{ records|length }}</strong> activities in last 30 days
+                                </div>
+                                
+                                <div>
+                                    {% set leads = records|selectattr('usage_type', 'equalto', 'lead_created')|list %}
+                                    {% set messages = records|selectattr('usage_type', 'equalto', 'message_sent')|list %}
+                                    {% set api_calls = records|selectattr('usage_type', 'equalto', 'api_call')|list %}
+                                    
+                                    {% if leads %}
+                                    <span class="badge bg-primary me-1">{{ leads|length }} leads</span>
+                                    {% endif %}
+                                    {% if messages %}
+                                    <span class="badge bg-success me-1">{{ messages|length }} messages</span>
+                                    {% endif %}
+                                    {% if api_calls %}
+                                    <span class="badge bg-warning me-1">{{ api_calls|length }} API calls</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4">No activity recorded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Recent Activity Timeline -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Recent Activity Timeline</h5>
+        </div>
+        <div class="card-body">
+            {% if activity %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Member</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in activity %}
+                        <tr>
+                            <td>
+                                <small>{{ record.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </td>
+                            <td>
+                                {% if record.user_id and members.get(record.user_id) %}
+                                {{ members[record.user_id].user.username }}
+                                {% elif record.user_id %}
+                                User #{{ record.user_id }}
+                                {% else %}
+                                <span class="text-muted">System</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge 
+                                    {% if record.usage_type == 'lead_created' %}bg-primary
+                                    {% elif record.usage_type == 'message_sent' %}bg-success
+                                    {% elif record.usage_type == 'api_call' %}bg-warning
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ record.usage_type.replace('_', ' ')|title }}
+                                </span>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    Quantity: {{ record.quantity }}
+                                    {% if record.resource_id %}
+                                    | Resource ID: {{ record.resource_id }}
+                                    {% endif %}
+                                </small>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted text-center py-4">No activity recorded yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

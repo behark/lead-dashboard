@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Lead CRM</title>
+    <title>Verify 2FA - Lead CRM</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -25,7 +25,8 @@
 <body>
     <div class="container">
         <div class="login-card">
-            <h3 class="text-center mb-4">Lead CRM</h3>
+            <h3 class="text-center mb-4">Two-Factor Authentication</h3>
+            <p class="text-center text-muted">Enter the code from your authenticator app</p>
             
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -38,23 +39,19 @@
             <form method="POST">
                 {{ csrf_token() }}
                 <div class="mb-3">
-                    <label class="form-label">Username</label>
-                    <input type="text" name="username" class="form-control" required autofocus>
+                    <label class="form-label">Authentication Code</label>
+                    <input type="text" name="token" class="form-control text-center" 
+                           placeholder="000000" maxlength="6" pattern="[0-9]{6}" 
+                           required autofocus style="font-size: 24px; letter-spacing: 8px;">
+                    <small class="form-text text-muted">
+                        Enter the 6-digit code from your authenticator app, or use a backup code.
+                    </small>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-control" required>
-                </div>
-                <div class="mb-3 form-check">
-                    <input type="checkbox" name="remember" class="form-check-input" id="remember">
-                    <label class="form-check-label" for="remember">Remember me</label>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Login</button>
+                <button type="submit" class="btn btn-primary w-100">Verify</button>
             </form>
             
             <div class="text-center mt-3">
-                <a href="{{ url_for('auth.register') }}">Create account</a> | 
-                <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+                <a href="{{ url_for('auth.login') }}">Back to login</a>
             </div>
         </div>
     </div>

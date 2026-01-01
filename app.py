@@ -1,12 +1,45 @@
 from flask import Flask
 from flask_login import LoginManager
 from flask_apscheduler import APScheduler
+from flask_wtf.csrf import CSRFProtect
+from flask_migrate import Migrate
 from config import config
 from models import db, User
+# Import SaaS models to ensure they're registered
+import models_saas
 import os
 
 login_manager = LoginManager()
 scheduler = APScheduler()
+csrf = CSRFProtect()
+migrate = Migrate()
+
+# Initialize Sentry for error tracking (optional, only if DSN is set)
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    
+    sentry_dsn = os.environ.get('SENTRY_DSN')
+    if sentry_dsn:
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            integrations=[
+                FlaskIntegration(),
+                SqlalchemyIntegration()
+            ],
+            traces_sample_rate=0.1,  # 10% of transactions for performance monitoring
+            environment=os.environ.get('FLASK_ENV', 'development'),
+            # Only send errors in production
+            before_send=lambda event, hint: event if os.environ.get('FLASK_ENV') == 'production' else None
+        )
+        print("✅ Sentry error tracking initialized")
+    else:
+        print("ℹ️  Sentry DSN not set - error tracking disabled")
+except ImportError:
+    print("ℹ️  Sentry SDK not installed - error tracking disabled")
+except Exception as e:
+    print(f"⚠️  Error initializing Sentry: {e}")
 
 
 def create_app(config_name='default'):
@@ -15,12 +48,20 @@ def create_app(config_name='default'):
     
     # Setup logging (must be early)
     from utils.logging_config import setup_logging
-    log_level = os.getenv('LOG_LEVEL', 'INFO' if not app.config.get('DEBUG') else 'DEBUG')
+    log_level = os.getenv('LOG_LEVEL', 'INFO' if not app.config.get('DEBUG', False) else 'DEBUG')
     setup_logging(app, log_level=log_level)
     
     # Validate environment variables
     from utils.env_validator import validate_on_startup
     validate_on_startup(app)
+    
+    # Initialize Redis/job queue (optional, graceful fallback if not available)
+    from utils.job_queue import init_redis
+    init_redis()
+    
+    # Initialize request logging middleware
+    from utils.request_logger import RequestLogger
+    RequestLogger.init_app(app)
     
     # Initialize extensions
     db.init_app(app)
@@ -28,23 +69,73 @@ def create_app(config_name='default'):
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
     
+    # Initialize CSRF protection
+    csrf.init_app(app)
+    
+    # Exempt webhook endpoints from CSRF (they use signature verification instead)
+    # Note: Webhooks are exempted after blueprints are registered
+    
+    # Initialize database migrations
+    migrate.init_app(app, db)
+    
     # Initialize caching
     from utils.cache import init_cache
     init_cache(app)
     
-    # Initialize rate limiting
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"],
-        storage_uri=app.config.get('REDIS_URL')  # Use Redis if available
-    )
+    # Initialize rate limiting (only if enabled)
+    if app.config.get('RATELIMIT_ENABLED', True):
+        from flask_limiter import Limiter
+        from flask_limiter.util import get_remote_address
+        
+        def get_user_id():
+            """Get user ID for per-user rate limiting"""
+            try:
+                from flask_login import current_user
+                if current_user.is_authenticated:
+                    return f"user:{current_user.id}"
+                return get_remote_address()
+            except Exception:
+                return get_remote_address()
+        
+        redis_url = app.config.get('REDIS_URL')
+        if redis_url:
+            # Use Redis for production
+            limiter = Limiter(
+                app=app,
+                key_func=get_user_id,  # Per-user rate limiting
+                default_limits=["200 per day", "50 per hour"],
+                storage_uri=redis_url,
+                per_method=True,
+                headers_enabled=True
+            )
+        else:
+            # Use in-memory for development (with warning suppression)
+            import warnings
+            warnings.filterwarnings('ignore', message='.*in-memory storage.*')
+            limiter = Limiter(
+                app=app,
+                key_func=get_user_id,  # Per-user rate limiting
+                default_limits=["200 per day", "50 per hour"],
+                per_method=True,
+                headers_enabled=True
+            )
+        
+        # Apply stricter limits to API endpoints
+        @app.before_request
+        def apply_api_rate_limits():
+            if request.path.startswith('/api/'):
+                # API endpoints: 100 requests per hour per user
+                try:
+                    limiter.limit("100 per hour", key_func=get_user_id)(lambda: None)()
+                except Exception:
+                    pass  # Ignore if limiter not available
+    else:
+        # Rate limiting disabled
+        limiter = None
     
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        return db.session.get(User, int(user_id))
     
     # Register blueprints
     from routes.auth import auth_bp
@@ -54,6 +145,12 @@ def create_app(config_name='default'):
     from routes.webhooks import webhooks_bp
     from routes.bulk import bulk_bp
     from routes.api_templates import api_templates_bp
+    from routes.billing import billing_bp
+    from routes.usage import usage_bp
+    from routes.team import team_bp
+    from routes.gdpr import gdpr_bp
+    from routes.landing import landing_bp
+    from routes.backup import backup_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -62,11 +159,45 @@ def create_app(config_name='default'):
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(bulk_bp)
     app.register_blueprint(api_templates_bp)
+    app.register_blueprint(billing_bp)
+    app.register_blueprint(usage_bp)
+    app.register_blueprint(team_bp)
+    app.register_blueprint(gdpr_bp)
+    app.register_blueprint(landing_bp)
+    app.register_blueprint(backup_bp)
+    
+    # Exempt webhook endpoints from CSRF (they use signature verification instead)
+    csrf.exempt(webhooks_bp)
     
     # Portfolio page (public, no login required)
     @app.route('/portfolio')
     def portfolio():
         return app.send_static_file('../templates/portfolio.html')
+    
+    # Health check endpoint (public, no login required)
+    @app.route('/health')
+    def health():
+        """Health check endpoint for monitoring and load balancers"""
+        from sqlalchemy import text
+        from datetime import datetime, timezone
+        from flask import jsonify
+        
+        try:
+            # Check database connectivity
+            db.session.execute(text('SELECT 1'))
+            db_status = 'connected'
+        except Exception as e:
+            db_status = f'error: {str(e)}'
+        
+        health_status = {
+            'status': 'healthy' if db_status == 'connected' else 'unhealthy',
+            'database': db_status,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'version': '2.1'
+        }
+        
+        status_code = 200 if db_status == 'connected' else 503
+        return jsonify(health_status), status_code
     
     # Create database tables
     with app.app_context():
@@ -76,25 +207,62 @@ def create_app(config_name='default'):
     if app.config.get('SCHEDULER_API_ENABLED') and not scheduler.running:
         scheduler.init_app(app)
         
+        # Setup logging for scheduled tasks
+        import logging
+        task_logger = logging.getLogger('scheduled_tasks')
+        
         @scheduler.task('cron', id='process_sequences', hour='9,14,18')
         def process_sequences():
-            with app.app_context():
-                from services.sequence_service import SequenceService
-                SequenceService.process_due_sequences()
+            """Process due sequence steps"""
+            try:
+                with app.app_context():
+                    from services.sequence_service import SequenceService
+                    result = SequenceService.process_due_sequences()
+                    task_logger.info(f"Processed sequences: {result}")
+            except Exception as e:
+                task_logger.exception(f"Error processing sequences: {e}")
         
         @scheduler.task('cron', id='decay_temperatures', hour='2')
         def decay_temperatures():
-            with app.app_context():
-                from services.scoring_service import ScoringService
-                ScoringService.apply_temperature_decay()
+            """Apply temperature decay to leads"""
+            try:
+                with app.app_context():
+                    from services.scoring_service import ScoringService
+                    result = ScoringService.apply_temperature_decay()
+                    task_logger.info(f"Applied temperature decay: {result}")
+            except Exception as e:
+                task_logger.exception(f"Error applying temperature decay: {e}")
         
         @scheduler.task('cron', id='record_daily_analytics', hour='23', minute='55')
         def record_analytics():
-            with app.app_context():
-                from services.analytics_service import AnalyticsService
-                AnalyticsService.record_daily_analytics()
+            """Record daily analytics summary"""
+            try:
+                with app.app_context():
+                    from services.analytics_service import AnalyticsService
+                    result = AnalyticsService.record_daily_analytics()
+                    task_logger.info(f"Recorded daily analytics: {result}")
+            except Exception as e:
+                task_logger.exception(f"Error recording daily analytics: {e}")
+        
+        @scheduler.task('cron', id='daily_backup', hour='2', minute='0')
+        def daily_backup():
+            """Create daily database backup"""
+            try:
+                with app.app_context():
+                    from utils.backup import BackupService
+                    result = BackupService.create_backup()
+                    if result.get('success'):
+                        task_logger.info(f"Daily backup created: {result.get('backup_path')}")
+                        # Cleanup old backups (keep 30 days)
+                        cleanup_result = BackupService.cleanup_old_backups(keep_days=30)
+                        task_logger.info(f"Cleaned up {cleanup_result.get('deleted_count', 0)} old backups")
+                    else:
+                        task_logger.error(f"Backup failed: {result.get('error')}")
+            except Exception as e:
+                task_logger.exception(f"Error creating daily backup: {e}")
         
         scheduler.start()
+        app.logger.info("Scheduled tasks initialized and started")
     
     return app
 
@@ -248,4 +416,8 @@ app = create_app()
 register_cli(app)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    import os
+    app = create_app()
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)

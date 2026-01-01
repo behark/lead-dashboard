@@ -80,7 +80,7 @@ class EnvValidator:
         if not hasattr(config_class, 'SECRET_KEY') or not config_class.SECRET_KEY:
             warnings.append("SECRET_KEY is not set - using default (not secure for production)")
         
-        if config_class.DEBUG and os.getenv('FLASK_ENV') == 'production':
+        if hasattr(config_class, 'DEBUG') and config_class.DEBUG and os.getenv('FLASK_ENV') == 'production':
             warnings.append("DEBUG is True in production environment - security risk!")
         
         # Check database

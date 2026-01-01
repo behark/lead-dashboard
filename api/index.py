@@ -32,7 +32,7 @@ def create_app():
     
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        return db.session.get(User, int(user_id))
     
     # Try to setup logging (gracefully fail if utils not available)
     # In serverless, only use console logging (no file handlers)

@@ -1,7 +1,9 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_login import login_required, current_user
 from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel, SavedFilter, BulkJob
+from models_saas import UsageRecord
 from services.analytics_service import AnalyticsService
+from utils.audit_logger import AuditLogger
 from services.scoring_service import ScoringService
 from services.contact_service import ContactService
 from services.sequence_service import SequenceService
@@ -267,11 +269,15 @@ def lead_detail(lead_id):
     # Eager load relationships to avoid N+1 queries (if available)
     # Note: contact_logs is lazy='dynamic' so we query it separately
     if joinedload:
-        lead = Lead.query.options(
-            joinedload(Lead.assigned_user)
-        ).get_or_404(lead_id)
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            abort(404)
+        # Eager load relationships
+        _ = lead.assigned_user  # Trigger lazy load
     else:
-        lead = Lead.query.get_or_404(lead_id)
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            abort(404)
     
     # Get contact history (query separately since it's dynamic)
     contact_logs = lead.contact_logs.order_by(ContactLog.sent_at.desc()).all()
@@ -298,7 +304,9 @@ def lead_detail(lead_id):
 @main_bp.route('/lead/<int:lead_id>/update', methods=['POST'])
 @login_required
 def update_lead(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    lead = db.session.get(Lead, lead_id)
+    if not lead:
+        abort(404)
     
     # Update status
     new_status = request.form.get('status')
@@ -313,6 +321,10 @@ def update_lead(lead_id):
     # Update notes
     notes = request.form.get('notes')
     if notes is not None:
+        # Validate notes length
+        if len(notes) > 10000:
+            flash('Notes must be 10000 characters or less.', 'danger')
+            return redirect(request.referrer or url_for('main.index'))
         lead.notes = notes
     
     # Update assignment
@@ -334,20 +346,38 @@ def update_lead(lead_id):
         except ValueError:
             pass
     
-    db.session.commit()
-    
-    # Check if this is an AJAX request
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return jsonify({'success': True})
-    
-    flash('Lead updated.', 'success')
-    return redirect(request.referrer or url_for('main.index'))
+    try:
+        db.session.commit()
+        
+        # Log lead update
+        AuditLogger.log_lead_action('lead_updated', lead_id, current_user.id, 
+                                   details={'status': new_status, 'assigned_to': assigned_to})
+        
+        # Check if this is an AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True})
+        flash('Lead updated.', 'success')
+        return redirect(request.referrer or url_for('main.index'))
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error updating lead")
+        
+        # Log failed update
+        AuditLogger.log_lead_action('lead_updated', lead_id, current_user.id, 
+                                   status='error', error_message=str(e))
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'error': 'Failed to update lead'}), 500
+        flash('Error updating lead. Please try again.', 'danger')
+        return redirect(request.referrer or url_for('main.index'))
 
 
 @main_bp.route('/lead/<int:lead_id>/contact', methods=['POST'])
 @login_required
 def contact_lead(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    lead = db.session.get(Lead, lead_id)
+    if not lead:
+        abort(404)
     
     channel = request.form.get('channel')
     template_id = request.form.get('template_id')
@@ -356,7 +386,7 @@ def contact_lead(lead_id):
     # Get message
     template = None
     if template_id:
-        template = MessageTemplate.query.get(template_id)
+        template = db.session.get(MessageTemplate, template_id)
         if not template:
             flash('Template not found.', 'danger')
             return redirect(url_for('main.lead_detail', lead_id=lead_id))
@@ -409,9 +439,15 @@ def contact_lead(lead_id):
         )
     
     if result and result.get('success'):
+        # Log successful contact
+        AuditLogger.log_lead_action('lead_contacted', lead_id, current_user.id,
+                                   details={'channel': channel, 'template_id': template_id})
         flash(f'Message sent via {channel}!', 'success')
     else:
         error = result.get('error', 'Unknown error') if result else 'Send failed'
+        # Log failed contact
+        AuditLogger.log_lead_action('lead_contacted', lead_id, current_user.id,
+                                   status='error', error_message=error)
         flash(f'Failed to send: {error}', 'danger')
     
     return redirect(url_for('main.lead_detail', lead_id=lead_id))
@@ -420,7 +456,9 @@ def contact_lead(lead_id):
 @main_bp.route('/lead/<int:lead_id>/sequence', methods=['POST'])
 @login_required
 def enroll_sequence(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    lead = db.session.get(Lead, lead_id)
+    if not lead:
+        abort(404)
     
     sequence_id = request.form.get('sequence_id')
     
@@ -439,7 +477,9 @@ def enroll_sequence(lead_id):
 @main_bp.route('/lead/<int:lead_id>/response', methods=['POST'])
 @login_required
 def record_response(lead_id):
-    lead = Lead.query.get_or_404(lead_id)
+    lead = db.session.get(Lead, lead_id)
+    if not lead:
+        abort(404)
     
     channel = request.form.get('channel', 'whatsapp')
     response_content = request.form.get('response_content')
@@ -501,7 +541,12 @@ def bulk_action():
         lead_ids_str = ','.join(str(lead.id) for lead in leads)
         return redirect(url_for('main.personal_whatsapp_bulk', lead_ids=lead_ids_str))
     
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error in action")
+        flash('Error performing action. Please try again.', 'danger')
     return redirect(url_for('main.index'))
 
 
@@ -531,26 +576,37 @@ def save_filter():
         is_favorite=is_favorite
     )
     
-    db.session.add(saved_filter)
-    db.session.commit()
-    
-    return jsonify({'success': True, 'id': saved_filter.id})
+    try:
+        db.session.add(saved_filter)
+        db.session.commit()
+        return jsonify({'success': True, 'id': saved_filter.id})
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error saving filter")
+        return jsonify({'success': False, 'error': 'Failed to save filter'}), 500
 
 
 @main_bp.route('/load-filter/<int:filter_id>')
 @login_required
 def load_filter(filter_id):
     """Load saved filter and redirect to dashboard with filters applied"""
-    saved_filter = SavedFilter.query.get_or_404(filter_id)
+    saved_filter = db.session.get(SavedFilter, filter_id)
+    if not saved_filter:
+        abort(404)
     
     if saved_filter.user_id != current_user.id:
         flash('Unauthorized access.', 'danger')
         return redirect(url_for('main.index'))
     
     # Update usage stats
-    saved_filter.last_used = datetime.now(timezone.utc)
-    saved_filter.usage_count += 1
-    db.session.commit()
+    try:
+        saved_filter.last_used = datetime.now(timezone.utc)
+        saved_filter.usage_count += 1
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error updating filter usage")
+        # Continue anyway - not critical
     
     # Build redirect URL with filters
     filters = saved_filter.filters
@@ -563,15 +619,21 @@ def load_filter(filter_id):
 @login_required
 def delete_filter(filter_id):
     """Delete a saved filter"""
-    saved_filter = SavedFilter.query.get_or_404(filter_id)
+    saved_filter = db.session.get(SavedFilter, filter_id)
+    if not saved_filter:
+        abort(404)
     
     if saved_filter.user_id != current_user.id:
         return jsonify({'success': False, 'error': 'Unauthorized'})
     
-    db.session.delete(saved_filter)
-    db.session.commit()
-    
-    return jsonify({'success': True})
+    try:
+        db.session.delete(saved_filter)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error deleting filter")
+        return jsonify({'success': False, 'error': 'Failed to delete filter'}), 500
 
 
 # ===== BULK JOB TRACKING =====
@@ -601,7 +663,9 @@ def bulk_jobs_dashboard():
 @login_required
 def get_job_status(job_id):
     """Get real-time status of a bulk job"""
-    job = BulkJob.query.get_or_404(job_id)
+    job = db.session.get(BulkJob, job_id)
+    if not job:
+        abort(404)
     
     if job.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -678,16 +742,23 @@ def personal_whatsapp_bulk():
 @login_required
 def cancel_job(job_id):
     """Cancel a running bulk job"""
-    job = BulkJob.query.get_or_404(job_id)
+    job = db.session.get(BulkJob, job_id)
+    if not job:
+        abort(404)
     
     if job.user_id != current_user.id:
         return jsonify({'error': 'Unauthorized'}), 403
     
     if job.is_active:
-        job.status = 'cancelled'
-        job.completed_at = datetime.now(timezone.utc)
-        db.session.commit()
-        return jsonify({'success': True, 'message': 'Job cancelled'})
+        try:
+            job.status = 'cancelled'
+            job.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Job cancelled'})
+        except Exception as e:
+            db.session.rollback()
+            logger.exception("Error cancelling job")
+            return jsonify({'success': False, 'error': 'Failed to cancel job'}), 500
     
     return jsonify({'success': False, 'message': 'Job is not active'})
 
@@ -704,172 +775,227 @@ def kanban_board():
 @login_required
 def get_leads_api():
     """Get leads as JSON for Kanban board"""
-    leads = Lead.query.filter_by(assigned_to=current_user.id).all()
-    
-    return jsonify([{
-        'id': l.id,
-        'name': l.name,
-        'phone': l.phone,
-        'status': l.status.value,
-        'temperature': l.temperature.value,
-        'lead_score': l.lead_score,
-        'category': l.category,
-        'city': l.city
-    } for l in leads])
+    try:
+        leads = Lead.query.filter_by(assigned_to=current_user.id).all()
+        
+        return jsonify([{
+            'id': l.id,
+            'name': l.name,
+            'phone': l.phone,
+            'status': l.status.value,
+            'temperature': l.temperature.value,
+            'lead_score': l.lead_score,
+            'category': l.category,
+            'city': l.city
+        } for l in leads])
+    except Exception as e:
+        logger.exception("Error fetching leads API")
+        return jsonify({'error': 'Failed to fetch leads', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/lead/<int:lead_id>/status', methods=['POST'])
 @login_required
 def update_lead_status(lead_id):
     """Update lead status via API"""
-    lead = Lead.query.get_or_404(lead_id)
-    
-    if lead.assigned_to != current_user.id and current_user.role != 'admin':
-        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
-    
-    data = request.get_json()
-    new_status = data.get('status')
-    
     try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({'success': False, 'error': 'Lead not found'}), 404
+        
+        if lead.assigned_to != current_user.id and current_user.role != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        new_status = data.get('status')
+        if not new_status:
+            return jsonify({'success': False, 'error': 'Status is required'}), 400
+        
         lead.status = LeadStatus(new_status)
         db.session.commit()
         return jsonify({'success': True})
-    except ValueError:
-        return jsonify({'success': False, 'error': 'Invalid status'})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': f'Invalid status: {str(e)}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error updating lead status")
+        return jsonify({'success': False, 'error': 'Failed to update status'}), 500
+    except Exception as e:
+        logger.exception("Error updating lead status")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'Failed to update status', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/hot-leads')
 @login_required
 def get_hot_leads():
     """Get new hot leads for notifications"""
-    since_timestamp = request.args.get('since', type=int)
-    
-    if not since_timestamp:
-        # Default to last hour
-        since_timestamp = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000)
-    
-    # Convert milliseconds to datetime
-    since_date = datetime.fromtimestamp(since_timestamp / 1000, tz=timezone.utc)
-    
-    # Query hot leads created since timestamp
-    hot_leads = Lead.query.filter(
-        Lead.temperature == LeadTemperature.HOT,
-        Lead.status == LeadStatus.NEW,
-        Lead.created_at >= since_date
-    ).order_by(Lead.created_at.desc()).limit(10).all()
-    
-    return jsonify({
-        'leads': [{
-            'id': lead.id,
-            'name': lead.name,
-            'category': lead.category,
-            'city': lead.city,
-            'country': lead.country,
-            'lead_score': lead.lead_score,
-            'phone': lead.phone,
-            'created_at': lead.created_at.isoformat()
-        } for lead in hot_leads]
-    })
+    try:
+        since_timestamp = request.args.get('since', type=int)
+        
+        if not since_timestamp:
+            # Default to last hour
+            since_timestamp = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000)
+        
+        # Convert milliseconds to datetime
+        try:
+            since_date = datetime.fromtimestamp(since_timestamp / 1000, tz=timezone.utc)
+        except (ValueError, OSError) as e:
+            return jsonify({'error': 'Invalid timestamp format', 'message': str(e)}), 400
+        
+        # Query hot leads created since timestamp
+        hot_leads = Lead.query.filter(
+            Lead.temperature == LeadTemperature.HOT,
+            Lead.status == LeadStatus.NEW,
+            Lead.created_at >= since_date
+        ).order_by(Lead.created_at.desc()).limit(10).all()
+        
+        return jsonify({
+            'leads': [{
+                'id': lead.id,
+                'name': lead.name,
+                'category': lead.category,
+                'city': lead.city,
+                'country': lead.country,
+                'lead_score': lead.lead_score,
+                'phone': lead.phone,
+                'created_at': lead.created_at.isoformat()
+            } for lead in hot_leads]
+        })
+    except Exception as e:
+        logger.exception("Error fetching hot leads")
+        return jsonify({'error': 'Failed to fetch hot leads', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/lead/<int:lead_id>')
 @login_required
 def get_lead_api(lead_id):
     """Get single lead data as JSON for inline editing"""
-    lead = Lead.query.get_or_404(lead_id)
-    
-    return jsonify({
-        'id': lead.id,
-        'name': lead.name,
-        'phone': lead.phone,
-        'email': lead.email,
-        'city': lead.city,
-        'country': lead.country,
-        'category': lead.category,
-        'status': lead.status.value,
-        'temperature': lead.temperature.value,
-        'lead_score': lead.lead_score,
-        'notes': lead.notes,
-        'next_followup': lead.next_followup.isoformat() if lead.next_followup else None,
-        'whatsapp_link': lead.whatsapp_link,
-        'rating': lead.rating
-    })
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({'error': 'Lead not found'}), 404
+        
+        return jsonify({
+            'id': lead.id,
+            'name': lead.name,
+            'phone': lead.phone,
+            'email': lead.email,
+            'city': lead.city,
+            'country': lead.country,
+            'category': lead.category,
+            'status': lead.status.value,
+            'temperature': lead.temperature.value,
+            'lead_score': lead.lead_score,
+            'notes': lead.notes,
+            'next_followup': lead.next_followup.isoformat() if lead.next_followup else None,
+            'whatsapp_link': lead.whatsapp_link,
+            'rating': lead.rating
+        })
+    except Exception as e:
+        logger.exception("Error fetching lead API")
+        return jsonify({'error': 'Failed to fetch lead', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/templates')
 @login_required
 def get_templates_api():
     """Get all active templates as JSON"""
-    templates = MessageTemplate.query.filter_by(is_active=True).all()
-    
-    return jsonify([{
-        'id': t.id,
-        'name': t.name,
-        'content': t.content,
-        'channel': t.channel.value,
-        'category': t.category,
-        'language': t.language,
-        'is_default': t.is_default,
-        'response_rate': getattr(t, 'response_rate', 0),
-        'usage_count': getattr(t, 'usage_count', 0)
-    } for t in templates])
+    try:
+        templates = MessageTemplate.query.filter_by(is_active=True).all()
+        
+        return jsonify([{
+            'id': t.id,
+            'name': t.name,
+            'content': t.content,
+            'channel': t.channel.value,
+            'category': t.category,
+            'language': t.language,
+            'is_default': t.is_default,
+            'response_rate': t.response_rate,
+            'usage_count': t.times_sent
+        } for t in templates])
+    except Exception as e:
+        logger.exception("Error fetching templates API")
+        return jsonify({'error': 'Failed to fetch templates', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/send-message', methods=['POST'])
 @login_required
 def send_message_api():
     """Send a message to a lead via API"""
-    data = request.get_json()
-    
-    lead_id = data.get('lead_id')
-    template_id = data.get('template_id')
-    custom_message = data.get('custom_message')
-    channel = data.get('channel', 'whatsapp')
-    
-    lead = Lead.query.get(lead_id)
-    if not lead:
-        return jsonify({'success': False, 'error': 'Lead not found'}), 404
-    
-    # Get message
-    if template_id:
-        template = MessageTemplate.query.get(template_id)
-        if template:
-            message = ContactService.personalize_message(template.content, lead)
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        lead_id = data.get('lead_id')
+        template_id = data.get('template_id')
+        custom_message = data.get('custom_message')
+        channel = data.get('channel', 'whatsapp')
+        
+        if not lead_id:
+            return jsonify({'success': False, 'error': 'lead_id is required'}), 400
+        
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({'success': False, 'error': 'Lead not found'}), 404
+        
+        # Get message
+        template = None
+        if template_id:
+            template = db.session.get(MessageTemplate, template_id)
+            if template:
+                message = ContactService.personalize_message(template.content, lead)
+            else:
+                message = custom_message or lead.first_message
         else:
             message = custom_message or lead.first_message
-    else:
-        message = custom_message or lead.first_message
-    
-    if not message:
-        return jsonify({'success': False, 'error': 'No message provided'})
-    
-    # Send based on channel
-    result = None
-    if channel == 'whatsapp':
-        result = ContactService.send_whatsapp(
-            lead, message,
-            template_id=template_id,
-            user_id=current_user.id
-        )
-    elif channel == 'email':
-        subject = template.subject if template_id and template else "Hello"
-        result = ContactService.send_email(
-            lead, subject, message,
-            template_id=template_id,
-            user_id=current_user.id
-        )
-    elif channel == 'sms':
-        result = ContactService.send_sms(
-            lead, message,
-            template_id=template_id,
-            user_id=current_user.id
-        )
-    
-    if result and result.get('success'):
-        return jsonify({'success': True, 'message': 'Message sent successfully'})
-    else:
-        error = result.get('error', 'Unknown error') if result else 'Send failed'
-        return jsonify({'success': False, 'error': error})
+        
+        if not message:
+            return jsonify({'success': False, 'error': 'No message provided'}), 400
+        
+        # Validate channel
+        if channel not in ['whatsapp', 'email', 'sms']:
+            return jsonify({'success': False, 'error': 'Invalid channel. Must be whatsapp, email, or sms'}), 400
+        
+        # Send based on channel
+        result = None
+        try:
+            if channel == 'whatsapp':
+                result = ContactService.send_whatsapp(
+                    lead, message,
+                    template_id=template_id,
+                    user_id=current_user.id
+                )
+            elif channel == 'email':
+                subject = template.subject if template_id and template else "Hello"
+                result = ContactService.send_email(
+                    lead, subject, message,
+                    template_id=template_id,
+                    user_id=current_user.id
+                )
+            elif channel == 'sms':
+                result = ContactService.send_sms(
+                    lead, message,
+                    template_id=template_id,
+                    user_id=current_user.id
+                )
+        except Exception as e:
+            logger.exception(f"Error sending {channel} message to lead {lead_id}")
+            return jsonify({'success': False, 'error': f'Failed to send message: {str(e)}'}), 500
+        
+        if result and result.get('success'):
+            return jsonify({'success': True, 'message': 'Message sent successfully'})
+        else:
+            error = result.get('error', 'Unknown error') if result else 'Send failed'
+            return jsonify({'success': False, 'error': error}), 400
+            
+    except Exception as e:
+        logger.exception("Error in send_message_api")
+        return jsonify({'success': False, 'error': 'Internal server error', 'message': str(e)}), 500
 
 
 @main_bp.route('/test-buttons')

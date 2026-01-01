@@ -1,0 +1,35 @@
+2026-01-01 04:29:43 - app - INFO - Logging initialized at level DEBUG
+SECRET_KEY is not set - using default (not secure for production)
+ * Serving Flask app 'app'
+ * Debug mode: on
+2026-01-01 04:29:43 - app - INFO - Logging initialized at level DEBUG
+SECRET_KEY is not set - using default (not secure for production)
+ * Debugger is active!
+2026-01-01 04:55:46 - app - INFO - Logging initialized at level DEBUG
+SECRET_KEY is not set - using default (not secure for production)
+ * Debugger is active!
+2026-01-01 04:56:01 - app - INFO - Logging initialized at level DEBUG
+SECRET_KEY is not set - using default (not secure for production)
+ * Debugger is active!
+Traceback (most recent call last):
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/app.py", line 7, in <module>
+    import models_saas
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/models_saas.py", line 268, in <module>
+    class UsageRecord(db.Model):
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/flask_sqlalchemy/model.py", line 92, in __init__
+    super().__init__(name, bases, d, **kwargs)
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/flask_sqlalchemy/model.py", line 144, in __init__
+    super().__init__(name, bases, d, **kwargs)
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/sqlalchemy/orm/decl_api.py", line 199, in __init__
+    _as_declarative(reg, cls, dict_)
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py", line 245, in _as_declarative
+    return _MapperConfig.setup_mapping(registry, cls, dict_, None, {})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py", line 326, in setup_mapping
+    return _ClassScanMapperConfig(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py", line 573, in __init__
+    self._extract_mappable_attributes()
+  File "/home/behar/Desktop/New Folder (10)/lead_dashboard/venv/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py", line 1530, in _extract_mappable_attributes
+    raise exc.InvalidRequestError(
+sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved when using the Declarative API.
