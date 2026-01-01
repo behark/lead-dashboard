@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any
 from functools import wraps
 
-# Setup logging
+# Setup logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -22,10 +22,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    logger.warning("python-dotenv not installed. Install it with: pip install python-dotenv")
+
 # ============== CONFIGURATION ==============
-API_KEY = "AIzaSyCD54trVcVBscm2tZmbZ770DJAWEoTPRo4"
-TELEGRAM_BOT_TOKEN = "8525457724:AAGoyy3rKKtQIjpwbB3wDjnGf-mTUKQsO88"
-TELEGRAM_CHAT_ID = "1507876704"
+# Load API keys from environment variables
+API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Validate required environment variables
+if not API_KEY:
+    raise ValueError("GOOGLE_MAPS_API_KEY environment variable is required. Please set it in .env file")
+if not TELEGRAM_BOT_TOKEN:
+    logger.warning("TELEGRAM_BOT_TOKEN not set. Telegram notifications will be disabled.")
+if not TELEGRAM_CHAT_ID:
+    logger.warning("TELEGRAM_CHAT_ID not set. Telegram notifications will be disabled.")
 
 SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
