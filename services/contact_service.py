@@ -71,11 +71,13 @@ class ContactService:
                 message_template_id=template_id,
                 message_content=message,
                 is_automated=is_automated,
-                ab_variant=ab_variant
+                ab_variant=ab_variant,
+                twilio_message_sid=tw_message.sid if success else None  # Store SID for status tracking
             )
             
             if success:
-                log.delivered_at = datetime.now(timezone.utc)
+                # Don't set delivered_at here - wait for webhook confirmation
+                # Only update lead status and template stats
                 lead.last_contacted = datetime.now(timezone.utc)
                 if lead.status == LeadStatus.NEW:
                     lead.status = LeadStatus.CONTACTED
@@ -195,10 +197,11 @@ class ContactService:
                 channel=ContactChannel.SMS,
                 message_template_id=template_id,
                 message_content=message,
-                delivered_at=datetime.now(timezone.utc),
+                twilio_message_sid=tw_message.sid,  # Store SID for status tracking
                 is_automated=is_automated,
                 ab_variant=ab_variant
             )
+            # Don't set delivered_at immediately - wait for webhook
             
             lead.last_contacted = datetime.now(timezone.utc)
             if lead.status == LeadStatus.NEW:

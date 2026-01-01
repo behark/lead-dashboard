@@ -224,6 +224,10 @@ class ContactLog(db.Model):
     responded_at = db.Column(db.DateTime)
     response_content = db.Column(db.Text)
     
+    # External service IDs for tracking
+    twilio_message_sid = db.Column(db.String(50), index=True)  # Twilio message SID for status tracking
+    external_message_id = db.Column(db.String(100))  # Generic external message ID
+    
     # For A/B testing
     ab_variant = db.Column(db.String(10))
     

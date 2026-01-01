@@ -161,3 +161,67 @@ def twilio_webhook():
         return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
             'Content-Type': 'text/xml'
         }
+
+
+@webhooks_bp.route('/twilio/status', methods=['POST'])
+def twilio_status_webhook():
+    """
+    Handle Twilio status callbacks for message delivery tracking
+    This webhook receives status updates for both SMS and WhatsApp messages
+    """
+    try:
+        from datetime import datetime, timezone
+        from twilio.request_validator import RequestValidator
+        
+        # Get status information
+        message_sid = request.form.get('MessageSid', '')
+        message_status = request.form.get('MessageStatus', '')
+        to_number = request.form.get('To', '')
+        from_number = request.form.get('From', '')
+        
+        current_app.logger.info(f"Twilio status webhook: SID={message_sid}, Status={message_status}")
+        
+        # Optional: Verify webhook signature for security
+        # validator = RequestValidator(current_app.config.get('TWILIO_AUTH_TOKEN'))
+        # if not validator.validate(request.url, request.form, request.headers.get('X-Twilio-Signature', '')):
+        #     current_app.logger.warning("Invalid Twilio webhook signature")
+        #     return jsonify({'error': 'Invalid signature'}), 403
+        
+        if not message_sid:
+            return jsonify({'error': 'Missing MessageSid'}), 400
+        
+        # Find the contact log by Twilio message SID
+        log = ContactLog.query.filter_by(twilio_message_sid=message_sid).first()
+        
+        if not log:
+            current_app.logger.warning(f"No contact log found for Twilio SID: {message_sid}")
+            return jsonify({'status': 'ok', 'message': 'Log not found'}), 200
+        
+        # Update status based on Twilio status
+        now = datetime.now(timezone.utc)
+        
+        # Twilio status values: queued, sending, sent, delivered, undelivered, failed, received, read
+        if message_status == 'delivered':
+            log.delivered_at = now
+            current_app.logger.info(f"Message {message_sid} delivered to lead {log.lead_id}")
+        elif message_status == 'read':
+            log.read_at = now
+            # Update template stats
+            if log.message_template_id:
+                from models import MessageTemplate
+                template = MessageTemplate.query.get(log.message_template_id)
+                if template:
+                    template.times_opened += 1
+            current_app.logger.info(f"Message {message_sid} read by lead {log.lead_id}")
+        elif message_status == 'failed' or message_status == 'undelivered':
+            # Log failure but don't update delivered_at
+            current_app.logger.warning(f"Message {message_sid} failed/undelivered: {message_status}")
+            # Could add a failed_at field if needed
+        
+        db.session.commit()
+        
+        return jsonify({'status': 'ok'}), 200
+    
+    except Exception as e:
+        current_app.logger.error(f"Twilio status webhook error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
