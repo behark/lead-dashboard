@@ -3,6 +3,7 @@ Logging configuration for the application
 """
 import logging
 import sys
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import json
