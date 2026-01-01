@@ -4,8 +4,23 @@ import time
 import re
 import os
 import urllib.parse
+import logging
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional, Any
+from functools import wraps
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('lead_finder.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # ============== CONFIGURATION ==============
 API_KEY = "AIzaSyCD54trVcVBscm2tZmbZ770DJAWEoTPRo4"
@@ -169,28 +184,113 @@ HIGH_VALUE_CATEGORIES = {
 # Status values: NEW, CONTACTED, REPLIED, CLOSED, LOST
 
 
+# ============== RATE LIMITING ==============
+import threading
+
+class RateLimiter:
+    """Simple rate limiter for API calls"""
+    def __init__(self, max_calls: int, period: float):
+        self.max_calls = max_calls
+        self.period = period
+        self.calls: List[float] = []
+        self.lock = threading.Lock()
+    
+    def wait_if_needed(self):
+        """Wait if rate limit would be exceeded (thread-safe)"""
+        with self.lock:
+            now = time.time()
+            # Remove old calls
+            self.calls = [t for t in self.calls if now - t < self.period]
+            
+            if len(self.calls) >= self.max_calls:
+                oldest = min(self.calls)
+                wait_time = self.period - (now - oldest) + 0.1
+                if wait_time > 0:
+                    logger.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
+                    # Release lock before sleeping
+                    self.lock.release()
+                    try:
+                        time.sleep(wait_time)
+                    finally:
+                        self.lock.acquire()
+                    now = time.time()
+                    self.calls = [t for t in self.calls if now - t < self.period]
+            
+            self.calls.append(time.time())
+
+
+# Google Places API: 100 requests per 100 seconds (free tier)
+google_limiter = RateLimiter(max_calls=90, period=100.0)
+
+
 # ============== API FUNCTIONS ==============
-def search_places(query, pagetoken=None):
+def search_places(query: str, pagetoken: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Search for places using Google Places API
+    
+    Args:
+        query: Search query string
+        pagetoken: Optional pagination token
+    
+    Returns:
+        API response as dictionary
+    """
+    google_limiter.wait_if_needed()
+    
     params = {
         "query": query,
         "key": API_KEY
     }
     if pagetoken:
         params["pagetoken"] = pagetoken
-    return requests.get(SEARCH_URL, params=params).json()
+    
+    try:
+        response = requests.get(SEARCH_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"Error searching places for '{query}': {e}")
+        return {"results": [], "status": "ERROR"}
 
 
-def get_place_details(place_id):
+def get_place_details(place_id: str) -> Dict[str, Any]:
+    """
+    Get detailed information about a place
+    
+    Args:
+        place_id: Google Places place ID
+    
+    Returns:
+        Place details dictionary
+    """
+    google_limiter.wait_if_needed()
+    
     params = {
         "place_id": place_id,
         "fields": "name,formatted_address,formatted_phone_number,website,rating,url",
         "key": API_KEY
     }
-    return requests.get(DETAILS_URL, params=params).json().get("result", {})
+    
+    try:
+        response = requests.get(DETAILS_URL, params=params, timeout=10)
+        response.raise_for_status()
+        return response.json().get("result", {})
+    except requests.RequestException as e:
+        logger.error(f"Error getting place details for '{place_id}': {e}")
+        return {}
 
 
 # ============== SCORING FUNCTIONS ==============
-def score_lead(lead):
+def score_lead(lead: Dict[str, Any]) -> int:
+    """
+    Calculate lead score based on various factors
+    
+    Args:
+        lead: Lead dictionary with business information
+    
+    Returns:
+        Lead score (0-100)
+    """
     score = 0
 
     if not lead.get("website"):
@@ -219,7 +319,16 @@ def score_lead(lead):
     return min(score, 100)
 
 
-def lead_temperature(score):
+def lead_temperature(score: int) -> str:
+    """
+    Determine lead temperature based on score
+    
+    Args:
+        score: Lead score (0-100)
+    
+    Returns:
+        Temperature string: "HOT", "WARM", or "COLD"
+    """
     if score >= 80:
         return "HOT"
     elif score >= 60:
@@ -906,90 +1015,132 @@ def load_existing_leads():
 
 
 # ============== MAIN FUNCTION ==============
+def process_place(place: Dict[str, Any], city: str, category: str, existing_leads: set) -> Optional[Dict[str, Any]]:
+    """
+    Process a single place result and convert to lead if valid
+    
+    Args:
+        place: Place data from Google Places API
+        city: City name
+        category: Business category
+        existing_leads: Set of existing lead keys to check duplicates
+    
+    Returns:
+        Lead dictionary if valid, None otherwise
+    """
+    try:
+        details = get_place_details(place["place_id"])
+        
+        # FILTER: must have phone, must NOT have website
+        if not details.get("formatted_phone_number") or details.get("website"):
+            return None
+        
+        # Check for duplicates
+        lead_key = f"{details.get('name')}|{details.get('formatted_phone_number')}"
+        if lead_key in existing_leads:
+            return None
+        
+        maps_url = details.get("url", "")
+        
+        # Build lead
+        lead = {
+            "name": details.get("name", ""),
+            "phone": details.get("formatted_phone_number", ""),
+            "city": city,
+            "country": get_country_for_city(city),
+            "language": get_language_for_city(city),
+            "address": details.get("formatted_address", ""),
+            "category": category,
+            "rating": details.get("rating"),
+            "maps_url": maps_url,
+            "website": "",
+        }
+        
+        # Calculate score and temperature
+        lead["lead_score"] = score_lead(lead)
+        lead["temperature"] = lead_temperature(lead["lead_score"])
+        lead["suggested_price"] = suggest_price(lead)
+        
+        # Generate message and WhatsApp link
+        lead["first_message"] = generate_first_message(lead)
+        lead["whatsapp_link"] = generate_whatsapp_link(
+            lead["phone"],
+            lead["first_message"],
+            lead["city"]
+        )
+        
+        # Status and tracking
+        lead["status"] = "NEW"
+        lead["created_at"] = datetime.now(timezone.utc).isoformat()
+        lead["last_contacted"] = ""
+        lead["follow_up_sent"] = "NO"
+        lead["notes"] = ""
+        
+        return lead
+        
+    except Exception as e:
+        logger.error(f"Error processing place {place.get('place_id', 'unknown')}: {e}")
+        return None
+
+
 def main():
+    """Main function to search and process leads"""
     existing_leads = load_existing_leads()
     new_count = 0
     stats = {"HOT": 0, "WARM": 0, "COLD": 0}
-
-    print(f"Starting lead search... (found {len(existing_leads)} existing leads)")
-
+    
+    logger.info(f"Starting lead search... (found {len(existing_leads)} existing leads)")
+    
+    # Use ThreadPoolExecutor for concurrent API calls
+    max_workers = 5  # Limit concurrent requests to respect rate limits
+    
     for city in CITIES:
         for category in CATEGORIES:
-            print(f"\nSearching {category} in {city}...")
-
+            logger.info(f"Searching {category} in {city}...")
+            
             response = search_places(f"{category} in {city}")
-
+            
             while True:
-                for place in response.get("results", []):
-                    details = get_place_details(place["place_id"])
-
-                    # FILTER: must have phone, must NOT have website
-                    if details.get("formatted_phone_number") and not details.get("website"):
-
-                        # Check for duplicates
-                        lead_key = f"{details.get('name')}|{details.get('formatted_phone_number')}"
-                        if lead_key in existing_leads:
-                            continue
-
-                        maps_url = details.get("url", "")
-
-                        # Build lead
-                        lead = {
-                            "name": details.get("name", ""),
-                            "phone": details.get("formatted_phone_number", ""),
-                            "city": city,
-                            "country": get_country_for_city(city),
-                            "language": get_language_for_city(city),
-                            "address": details.get("formatted_address", ""),
-                            "category": category,
-                            "rating": details.get("rating", ""),
-                            "maps_url": maps_url,
-                            "website": "",
-                        }
-
-                        # Calculate score and temperature
-                        lead["lead_score"] = score_lead(lead)
-                        lead["temperature"] = lead_temperature(lead["lead_score"])
-                        lead["suggested_price"] = suggest_price(lead)
-
-                        # Generate message and WhatsApp link
-                        lead["first_message"] = generate_first_message(lead)
-                        lead["whatsapp_link"] = generate_whatsapp_link(
-                            lead["phone"],
-                            lead["first_message"],
-                            lead["city"]
-                        )
-
-                        # Status and tracking
-                        lead["status"] = "NEW"
-                        lead["created_at"] = datetime.now(timezone.utc).isoformat()
-                        lead["last_contacted"] = ""
-                        lead["follow_up_sent"] = "NO"
-                        lead["notes"] = ""
-
-                        # Save immediately
-                        save_lead(lead)
-                        existing_leads.add(lead_key)
-                        new_count += 1
-                        stats[lead["temperature"]] += 1
-
-                        print(f"[{lead['temperature']}] {lead['name']} - Score: {lead['lead_score']}")
-
-                        # Send Telegram alert for HOT leads
-                        if lead["temperature"] == "HOT":
-                            send_telegram_alert(lead)
-
-                    time.sleep(0.4)
-
+                places = response.get("results", [])
+                if not places:
+                    break
+                
+                # Process places concurrently
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_place = {
+                        executor.submit(process_place, place, city, category, existing_leads): place
+                        for place in places
+                    }
+                    
+                    for future in as_completed(future_to_place):
+                        lead = future.result()
+                        if lead:
+                            # Check again for duplicates (thread-safe)
+                            lead_key = f"{lead['name']}|{lead['phone']}"
+                            if lead_key not in existing_leads:
+                                existing_leads.add(lead_key)
+                                
+                                # Save lead
+                                save_lead(lead)
+                                new_count += 1
+                                stats[lead["temperature"]] += 1
+                                
+                                logger.info(f"[{lead['temperature']}] {lead['name']} - Score: {lead['lead_score']}")
+                                
+                                # Send Telegram alert for HOT leads
+                                if lead["temperature"] == "HOT":
+                                    send_telegram_alert(lead)
+                
+                # Check for next page
                 token = response.get("next_page_token")
                 if not token:
                     break
-
-                time.sleep(2)
+                
+                time.sleep(2)  # Required delay for pagination token
                 response = search_places(f"{category} in {city}", token)
-
-    print(f"\nDONE - {new_count} new leads saved to {OUTPUT_FILE}")
-    print(f"HOT: {stats['HOT']} | WARM: {stats['WARM']} | COLD: {stats['COLD']}")
+    
+    logger.info(f"DONE - {new_count} new leads saved to {OUTPUT_FILE}")
+    logger.info(f"HOT: {stats['HOT']} | WARM: {stats['WARM']} | COLD: {stats['COLD']}")
 
 
 if __name__ == "__main__":
