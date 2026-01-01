@@ -1,0 +1,7 @@
+{"timestamp": "2026-01-01T03:05:11.213169", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:05:11.787496", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:12:46.517101", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:13:00.253986", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:14:35.593046", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:15:34.072523", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}
+{"timestamp": "2026-01-01T03:15:34.603237", "level": "INFO", "logger": "app", "message": "Logging initialized at level DEBUG", "module": "logging_config", "function": "setup_logging", "line": 106}

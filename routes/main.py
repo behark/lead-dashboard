@@ -74,6 +74,91 @@ def get_cached_sequences() -> List[Sequence]:
 @main_bp.route('/')
 @login_required
 def index():
+    # Check if user wants quick dashboard (default for personal use)
+    use_quick = request.args.get('view', 'quick') == 'quick'
+    
+    if use_quick:
+        return quick_dashboard()
+    
+    # Original full dashboard
+    return full_dashboard()
+
+
+@main_bp.route('/quick')
+@login_required
+def quick_dashboard():
+    """Simplified quick-access dashboard optimized for personal use"""
+    # Handle presets
+    preset = request.args.get('preset')
+    
+    query = Lead.query
+    
+    # Apply smart presets
+    if preset == 'hot':
+        # Hot & Untouched: HOT temperature + NEW status
+        query = query.filter(
+            Lead.temperature == LeadTemperature.HOT,
+            Lead.status == LeadStatus.NEW
+        )
+    elif preset == 'followup':
+        # Follow-ups due: Has next_followup date <= today
+        today = datetime.now(timezone.utc).date()
+        query = query.filter(
+            Lead.next_followup.isnot(None),
+            Lead.next_followup <= today
+        )
+    elif preset == 'today':
+        # Today's targets: NEW or CONTACTED, sorted by score
+        query = query.filter(
+            Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED])
+        )
+    
+    # Default sort: highest score first
+    query = query.order_by(Lead.lead_score.desc())
+    
+    # Optimize query
+    if joinedload:
+        query = query.options(joinedload(Lead.assigned_user))
+    
+    # Pagination (smaller page size for quick view)
+    page = request.args.get('page', 1, type=int)
+    per_page = 15  # Smaller for faster loading
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    leads = pagination.items
+    
+    # Get enhanced stats
+    stats = AnalyticsService.get_dashboard_stats()
+    
+    # Add quick stats for presets
+    stats['hot_new'] = Lead.query.filter(
+        Lead.temperature == LeadTemperature.HOT,
+        Lead.status == LeadStatus.NEW
+    ).count()
+    
+    today = datetime.now(timezone.utc).date()
+    stats['followup_due'] = Lead.query.filter(
+        Lead.next_followup.isnot(None),
+        Lead.next_followup <= today
+    ).count()
+    
+    stats['today_targets'] = Lead.query.filter(
+        Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED])
+    ).count()
+    
+    # Get templates for quick actions
+    templates = get_cached_templates()
+    
+    return render_template(
+        'quick_dashboard.html',
+        leads=leads,
+        pagination=pagination,
+        stats=stats,
+        templates=templates
+    )
+
+
+def full_dashboard():
+    """Original full-featured dashboard"""
     # Get all leads for stats calculation
     all_leads_query = Lead.query
     
@@ -171,7 +256,8 @@ def index():
             'country': country_filter,
             'sort': sort_by,
             'assigned': assigned_filter,
-        }
+        },
+        templates=get_cached_templates()
     )
 
 
@@ -561,36 +647,27 @@ def personal_whatsapp_bulk():
         if not lead.phone:
             continue
         
-        # Use existing whatsapp_link if available, otherwise generate one
-        if lead.whatsapp_link:
-            whatsapp_links.append({
-                'lead_id': lead.id,
-                'name': lead.name,
-                'phone': lead.phone,
-                'link': lead.whatsapp_link,
-                'message': lead.first_message or ''
-            })
-        else:
-            # Generate WhatsApp Web link
-            from services.phone_service import format_phone_international
-            import urllib.parse
-            
-            formatted_phone = format_phone_international(lead.phone, lead.country)
-            # Remove + and spaces for WhatsApp link
-            clean_phone = formatted_phone.replace('+', '').replace(' ', '').replace('-', '')
-            
-            message = lead.first_message or f"Hi {lead.name}! I saw your business on Google and wanted to reach out."
-            encoded_message = urllib.parse.quote(message)
-            
-            whatsapp_link = f"https://wa.me/{clean_phone}?text={encoded_message}"
-            
-            whatsapp_links.append({
-                'lead_id': lead.id,
-                'name': lead.name,
-                'phone': lead.phone,
-                'link': whatsapp_link,
-                'message': message
-            })
+        # Generate or use existing WhatsApp Web link
+        from services.phone_service import format_phone_international
+        import urllib.parse
+        
+        formatted_phone = format_phone_international(lead.phone, lead.country)
+        # Remove + and spaces for WhatsApp link
+        clean_phone = formatted_phone.replace('+', '').replace(' ', '').replace('-', '')
+        
+        # Use first_message if available, otherwise generate a simple one
+        message = lead.first_message or f"Hi {lead.name}! I saw your business on Google and wanted to reach out."
+        encoded_message = urllib.parse.quote(message)
+        
+        whatsapp_link = f"https://wa.me/{clean_phone}?text={encoded_message}"
+        
+        whatsapp_links.append({
+            'lead_id': lead.id,
+            'name': lead.name,
+            'phone': lead.phone,
+            'link': whatsapp_link,
+            'message': message
+        })
     
     return render_template('bulk/personal_whatsapp.html',
                          leads_data=whatsapp_links,
@@ -659,5 +736,146 @@ def update_lead_status(lead_id):
         return jsonify({'success': True})
     except ValueError:
         return jsonify({'success': False, 'error': 'Invalid status'})
+
+
+@main_bp.route('/api/hot-leads')
+@login_required
+def get_hot_leads():
+    """Get new hot leads for notifications"""
+    since_timestamp = request.args.get('since', type=int)
+    
+    if not since_timestamp:
+        # Default to last hour
+        since_timestamp = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000)
+    
+    # Convert milliseconds to datetime
+    since_date = datetime.fromtimestamp(since_timestamp / 1000, tz=timezone.utc)
+    
+    # Query hot leads created since timestamp
+    hot_leads = Lead.query.filter(
+        Lead.temperature == LeadTemperature.HOT,
+        Lead.status == LeadStatus.NEW,
+        Lead.created_at >= since_date
+    ).order_by(Lead.created_at.desc()).limit(10).all()
+    
+    return jsonify({
+        'leads': [{
+            'id': lead.id,
+            'name': lead.name,
+            'category': lead.category,
+            'city': lead.city,
+            'country': lead.country,
+            'lead_score': lead.lead_score,
+            'phone': lead.phone,
+            'created_at': lead.created_at.isoformat()
+        } for lead in hot_leads]
+    })
+
+
+@main_bp.route('/api/lead/<int:lead_id>')
+@login_required
+def get_lead_api(lead_id):
+    """Get single lead data as JSON for inline editing"""
+    lead = Lead.query.get_or_404(lead_id)
+    
+    return jsonify({
+        'id': lead.id,
+        'name': lead.name,
+        'phone': lead.phone,
+        'email': lead.email,
+        'city': lead.city,
+        'country': lead.country,
+        'category': lead.category,
+        'status': lead.status.value,
+        'temperature': lead.temperature.value,
+        'lead_score': lead.lead_score,
+        'notes': lead.notes,
+        'next_followup': lead.next_followup.isoformat() if lead.next_followup else None,
+        'whatsapp_link': lead.whatsapp_link,
+        'rating': lead.rating
+    })
+
+
+@main_bp.route('/api/templates')
+@login_required
+def get_templates_api():
+    """Get all active templates as JSON"""
+    templates = MessageTemplate.query.filter_by(is_active=True).all()
+    
+    return jsonify([{
+        'id': t.id,
+        'name': t.name,
+        'content': t.content,
+        'channel': t.channel.value,
+        'category': t.category,
+        'language': t.language,
+        'is_default': t.is_default,
+        'response_rate': getattr(t, 'response_rate', 0),
+        'usage_count': getattr(t, 'usage_count', 0)
+    } for t in templates])
+
+
+@main_bp.route('/api/send-message', methods=['POST'])
+@login_required
+def send_message_api():
+    """Send a message to a lead via API"""
+    data = request.get_json()
+    
+    lead_id = data.get('lead_id')
+    template_id = data.get('template_id')
+    custom_message = data.get('custom_message')
+    channel = data.get('channel', 'whatsapp')
+    
+    lead = Lead.query.get(lead_id)
+    if not lead:
+        return jsonify({'success': False, 'error': 'Lead not found'}), 404
+    
+    # Get message
+    if template_id:
+        template = MessageTemplate.query.get(template_id)
+        if template:
+            message = ContactService.personalize_message(template.content, lead)
+        else:
+            message = custom_message or lead.first_message
+    else:
+        message = custom_message or lead.first_message
+    
+    if not message:
+        return jsonify({'success': False, 'error': 'No message provided'})
+    
+    # Send based on channel
+    result = None
+    if channel == 'whatsapp':
+        result = ContactService.send_whatsapp(
+            lead, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    elif channel == 'email':
+        subject = template.subject if template_id and template else "Hello"
+        result = ContactService.send_email(
+            lead, subject, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    elif channel == 'sms':
+        result = ContactService.send_sms(
+            lead, message,
+            template_id=template_id,
+            user_id=current_user.id
+        )
+    
+    if result and result.get('success'):
+        return jsonify({'success': True, 'message': 'Message sent successfully'})
+    else:
+        error = result.get('error', 'Unknown error') if result else 'Send failed'
+        return jsonify({'success': False, 'error': error})
+
+
+@main_bp.route('/test-buttons')
+@login_required
+def test_buttons():
+    """Button testing page"""
+    return render_template('test_buttons.html')
 
 

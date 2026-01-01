@@ -1,0 +1,855 @@
+{% extends "base.html" %}
+
+{% block title %}Quick Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Quick Dashboard Styles */
+    .quick-dashboard {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    /* Instant Actions Bar */
+    .instant-actions {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: var(--bs-body-bg);
+        padding: 15px 0;
+        margin-bottom: 20px;
+        border-bottom: 2px solid var(--bs-border-color);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .action-btn {
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 600;
+        border-radius: 10px;
+        transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    
+    /* Smart Filter Presets */
+    .filter-presets {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+    }
+    
+    .preset-btn {
+        flex: 1;
+        min-width: 200px;
+        padding: 20px;
+        border-radius: 12px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .preset-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
+    
+    .preset-btn.hot {
+        background: linear-gradient(135deg, #ff6b6b 0%, #dc3545 100%);
+    }
+    
+    .preset-btn.followup {
+        background: linear-gradient(135deg, #ffd93d 0%, #ffc107 100%);
+        color: #333;
+    }
+    
+    .preset-btn.new {
+        background: linear-gradient(135deg, #6bcfff 0%, #17a2b8 100%);
+    }
+    
+    .preset-btn .count {
+        font-size: 2rem;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 5px;
+    }
+    
+    .preset-btn .label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    /* Card View */
+    .lead-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .lead-card {
+        background: var(--bs-body-bg);
+        border: 2px solid var(--bs-border-color);
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.2s;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .lead-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        border-color: #0d6efd;
+    }
+    
+    .lead-card.hot {
+        border-left: 5px solid #dc3545;
+    }
+    
+    .lead-card.warm {
+        border-left: 5px solid #ffc107;
+    }
+    
+    .lead-card.cold {
+        border-left: 5px solid #17a2b8;
+    }
+    
+    .lead-card .score-badge {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    
+    .lead-card .name {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        padding-right: 60px;
+    }
+    
+    .lead-card .info {
+        color: var(--bs-secondary-color);
+        font-size: 0.9rem;
+        margin-bottom: 15px;
+    }
+    
+    .lead-card .quick-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+    
+    .lead-card .quick-actions button {
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    
+    /* Keyboard Hint */
+    .keyboard-hint {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        z-index: 1000;
+        animation: fadeIn 0.3s;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* View Toggle */
+    .view-toggle {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+    
+    .view-toggle button {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 2px solid var(--bs-border-color);
+        background: var(--bs-body-bg);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .view-toggle button.active {
+        background: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+    }
+    
+    /* Mobile Optimizations */
+    @media (max-width: 768px) {
+        .filter-presets {
+            flex-direction: column;
+        }
+        
+        .preset-btn {
+            min-width: 100%;
+        }
+        
+        .lead-cards {
+            grid-template-columns: 1fr;
+        }
+        
+        .instant-actions {
+            padding: 10px 0;
+        }
+        
+        .action-btn {
+            padding: 10px 16px;
+            font-size: 0.9rem;
+        }
+    }
+    
+    /* Loading Indicator */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    
+    .loading-overlay.show {
+        display: flex;
+    }
+    
+    .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="quick-dashboard">
+    <!-- Instant Actions Bar -->
+    <div class="instant-actions">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-success action-btn" onclick="safeQuickWhatsApp()" title="Send WhatsApp (W)">
+                    <i class="bi bi-whatsapp"></i> Quick WhatsApp
+                </button>
+                <button class="btn btn-primary action-btn" onclick="safeMarkContacted()" title="Mark as Contacted (C)">
+                    <i class="bi bi-check-circle"></i> Mark Contacted
+                </button>
+                <button class="btn btn-warning action-btn" onclick="safeScheduleFollowup()" title="Schedule Follow-up (F)">
+                    <i class="bi bi-calendar-plus"></i> Follow-up Tomorrow
+                </button>
+                <button class="btn btn-secondary action-btn" onclick="safeSkipLead()" title="Skip/Archive (S)">
+                    <i class="bi bi-archive"></i> Skip
+                </button>
+            </div>
+            <div class="view-toggle">
+                <button id="cardViewBtn" class="active" onclick="switchView('card')">
+                    <i class="bi bi-grid-3x3-gap"></i> Cards
+                </button>
+                <button id="tableViewBtn" onclick="switchView('table')">
+                    <i class="bi bi-table"></i> Table
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Smart Filter Presets -->
+    <div class="filter-presets">
+        <a href="?preset=hot" class="preset-btn hot">
+            <span class="count">{{ stats.hot_new }}</span>
+            <span class="label">🔥 Hot & Untouched</span>
+        </a>
+        <a href="?preset=followup" class="preset-btn followup">
+            <span class="count">{{ stats.followup_due }}</span>
+            <span class="label">⏰ Follow-ups Due</span>
+        </a>
+        <a href="?preset=today" class="preset-btn new">
+            <span class="count">{{ stats.today_targets }}</span>
+            <span class="label">🎯 Today's Targets</span>
+        </a>
+    </div>
+    
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="metric-card text-center">
+                <h2 class="text-primary">{{ stats.conversion.response_rate }}%</h2>
+                <small class="text-muted">Response Rate</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card text-center">
+                <h2 class="text-success">{{ stats.conversion.close_rate }}%</h2>
+                <small class="text-muted">Close Rate</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card text-center">
+                <h2 class="text-info">{{ stats.recent_activity.contacts_made }}</h2>
+                <small class="text-muted">Contacts (7d)</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card text-center">
+                <h2 class="text-warning">{{ stats.total }}</h2>
+                <small class="text-muted">Total Leads</small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card View -->
+    <div id="cardView" class="lead-cards">
+        {% for lead in leads %}
+        <div class="lead-card {{ lead.temperature.value|lower }}" data-lead-id="{{ lead.id }}" data-index="{{ loop.index }}">
+            <div class="score-badge">{{ lead.lead_score }}</div>
+            <div class="name">{{ lead.name }}</div>
+            <div class="info">
+                <i class="bi bi-telephone"></i> {{ lead.phone }}<br>
+                <i class="bi bi-geo-alt"></i> {{ lead.city }}, {{ lead.country }}<br>
+                <i class="bi bi-briefcase"></i> {{ lead.category }}
+                {% if lead.rating %}
+                <br><i class="bi bi-star-fill text-warning"></i> {{ lead.rating }}⭐
+                {% endif %}
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                    {{ lead.temperature.value }}
+                </span>
+                <span class="badge bg-secondary">{{ lead.status.value }}</span>
+            </div>
+            <div class="quick-actions">
+                <button class="btn btn-success btn-sm" onclick="openWhatsApp({{ lead.id }}, '{{ lead.whatsapp_link }}', event)">
+                    <i class="bi bi-whatsapp"></i> WhatsApp
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="quickContact({{ lead.id }}, event)">
+                    <i class="bi bi-check"></i> Contacted
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="viewDetails({{ lead.id }}, event)">
+                    <i class="bi bi-eye"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Table View (Hidden by default) -->
+    <div id="tableView" style="display: none;">
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-hover lead-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Contact</th>
+                            <th>Location</th>
+                            <th>Category</th>
+                            <th>Score</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for lead in leads %}
+                    <tr class="{% if lead.temperature.value == 'HOT' %}temp-hot{% elif lead.temperature.value == 'WARM' %}temp-warm{% else %}temp-cold{% endif %}" data-lead-id="{{ lead.id }}" data-index="{{ loop.index }}">
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <strong>{{ lead.name }}</strong>
+                            {% if lead.rating %}
+                            <br><small class="text-muted">{{ lead.rating }}⭐</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ lead.phone }}</td>
+                        <td>{{ lead.city }}, {{ lead.country }}</td>
+                        <td>{{ lead.category }}</td>
+                        <td>
+                            <strong>{{ lead.lead_score }}</strong>
+                            <br><span class="badge {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">{{ lead.temperature.value }}</span>
+                        </td>
+                        <td>
+                            <span class="badge {% if lead.status.value == 'NEW' %}bg-secondary{% elif lead.status.value == 'CONTACTED' %}bg-info{% elif lead.status.value == 'REPLIED' %}bg-warning text-dark{% elif lead.status.value == 'CLOSED' %}bg-success{% else %}bg-dark{% endif %}">
+                                {{ lead.status.value }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-success" onclick="openWhatsApp({{ lead.id }}, '{{ lead.whatsapp_link }}', event)">
+                                    <i class="bi bi-whatsapp"></i>
+                                </button>
+                                <button class="btn btn-primary" onclick="quickContact({{ lead.id }}, event)">
+                                    <i class="bi bi-check"></i>
+                                </button>
+                                <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if pagination.pages > 1 %}
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if pagination.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ pagination.prev_num }}">Previous</a>
+            </li>
+            {% endif %}
+            
+            {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                    {% if p == pagination.page %}
+                    <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                    {% else %}
+                    <li class="page-item"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>
+                    {% endif %}
+                {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+            
+            {% if pagination.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ pagination.next_num }}">Next</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+</div>
+
+<!-- Keyboard Hint -->
+<div class="keyboard-hint" id="keyboardHint" style="display: none;">
+    Press <kbd>?</kbd> for shortcuts
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Mobile Swipe Support -->
+<script src="{{ url_for('static', filename='js/mobile-swipe.js') }}"></script>
+
+<!-- Browser Notifications -->
+<script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+
+<!-- Inline Editing -->
+<script src="{{ url_for('static', filename='js/inline-edit.js') }}"></script>
+
+<!-- Performance Optimizations -->
+<script src="{{ url_for('static', filename='js/performance.js') }}"></script>
+
+<script>
+// ===== GLOBAL STATE =====
+let selectedLeadId = null;
+let currentView = 'card';
+
+// ===== VIEW SWITCHING =====
+function switchView(view) {
+    currentView = view;
+    const cardView = document.getElementById('cardView');
+    const tableView = document.getElementById('tableView');
+    const cardBtn = document.getElementById('cardViewBtn');
+    const tableBtn = document.getElementById('tableViewBtn');
+    
+    if (view === 'card') {
+        cardView.style.display = 'grid';
+        tableView.style.display = 'none';
+        cardBtn.classList.add('active');
+        tableBtn.classList.remove('active');
+    } else {
+        cardView.style.display = 'none';
+        tableView.style.display = 'block';
+        cardBtn.classList.remove('active');
+        tableBtn.classList.add('active');
+    }
+    
+    // Save preference
+    localStorage.setItem('preferredView', view);
+}
+
+// ===== INSTANT ACTIONS =====
+function quickWhatsApp() {
+    if (!selectedLeadId) {
+        alert('Please select a lead first (click on a card)');
+        return;
+    }
+    const card = document.querySelector(`[data-lead-id="${selectedLeadId}"]`);
+    const whatsappBtn = card.querySelector('.btn-success');
+    whatsappBtn.click();
+}
+
+function markContacted() {
+    if (!selectedLeadId) {
+        alert('Please select a lead first');
+        return;
+    }
+    quickContact(selectedLeadId);
+}
+
+function scheduleFollowup() {
+    if (!selectedLeadId) {
+        alert('Please select a lead first');
+        return;
+    }
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = tomorrow.toISOString().split('T')[0];
+    
+    showLoading();
+    fetch(`/lead/${selectedLeadId}/update`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: `next_followup=${dateStr}T09:00`
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showNotification('Follow-up scheduled for tomorrow', 'success');
+            moveToNextLead();
+        }
+    })
+    .catch(err => {
+        hideLoading();
+        console.error(err);
+    });
+}
+
+function skipLead() {
+    if (!selectedLeadId) {
+        alert('Please select a lead first');
+        return;
+    }
+    moveToNextLead();
+}
+
+// ===== LEAD ACTIONS =====
+function openWhatsApp(leadId, whatsappLink, event) {
+    event.stopPropagation();
+    selectLead(leadId);
+    window.open(whatsappLink, '_blank');
+    
+    // Auto-mark as contacted after opening WhatsApp
+    setTimeout(() => {
+        if (confirm('Mark this lead as contacted?')) {
+            quickContact(leadId);
+        }
+    }, 1000);
+}
+
+function quickContact(leadId, event) {
+    if (event) event.stopPropagation();
+    
+    showLoading();
+    fetch(`/lead/${leadId}/update`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: 'status=CONTACTED'
+    })
+    .then(r => r.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            showNotification('Lead marked as contacted!', 'success');
+            const card = document.querySelector(`[data-lead-id="${leadId}"]`);
+            const badge = card.querySelector('.badge.bg-secondary');
+            if (badge) {
+                badge.classList.remove('bg-secondary');
+                badge.classList.add('bg-info');
+                badge.textContent = 'CONTACTED';
+            }
+            moveToNextLead();
+        }
+    })
+    .catch(err => {
+        hideLoading();
+        console.error(err);
+    });
+}
+
+function viewDetails(leadId, event) {
+    event.stopPropagation();
+    window.location.href = `/lead/${leadId}`;
+}
+
+// ===== LEAD SELECTION =====
+function selectLead(leadId) {
+    // Remove previous selection
+    document.querySelectorAll('.lead-card, tr[data-lead-id]').forEach(el => {
+        el.style.outline = 'none';
+    });
+    
+    // Highlight selected
+    const elements = document.querySelectorAll(`[data-lead-id="${leadId}"]`);
+    elements.forEach(el => {
+        el.style.outline = '3px solid #0d6efd';
+    });
+    
+    selectedLeadId = leadId;
+}
+
+function moveToNextLead() {
+    const current = document.querySelector(`[data-lead-id="${selectedLeadId}"]`);
+    if (!current) return;
+    
+    const currentIndex = parseInt(current.dataset.index);
+    const next = document.querySelector(`[data-index="${currentIndex + 1}"]`);
+    
+    if (next) {
+        const nextId = parseInt(next.dataset.leadId);
+        selectLead(nextId);
+        next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+        // End of list
+        showNotification('End of leads! Great work! 🎉', 'success');
+        selectedLeadId = null;
+    }
+}
+
+// ===== KEYBOARD SHORTCUTS =====
+document.addEventListener('keydown', function(e) {
+    // Don't trigger if typing in input/textarea
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    
+    // Number keys 1-5: Select first 5 leads
+    if (e.key >= '1' && e.key <= '5') {
+        const index = parseInt(e.key);
+        const lead = document.querySelector(`[data-index="${index}"]`);
+        if (lead) {
+            const leadId = parseInt(lead.dataset.leadId);
+            selectLead(leadId);
+            lead.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        e.preventDefault();
+    }
+    
+    // W: Quick WhatsApp
+    if (e.key === 'w' || e.key === 'W') {
+        quickWhatsApp();
+        e.preventDefault();
+    }
+    
+    // C: Mark as contacted
+    if (e.key === 'c' || e.key === 'C') {
+        markContacted();
+        e.preventDefault();
+    }
+    
+    // F: Schedule follow-up
+    if (e.key === 'f' || e.key === 'F') {
+        scheduleFollowup();
+        e.preventDefault();
+    }
+    
+    // S: Skip lead
+    if (e.key === 's' || e.key === 'S') {
+        skipLead();
+        e.preventDefault();
+    }
+    
+    // Enter: Open WhatsApp for selected lead
+    if (e.key === 'Enter' && selectedLeadId) {
+        const card = document.querySelector(`[data-lead-id="${selectedLeadId}"]`);
+        const whatsappBtn = card.querySelector('.btn-success');
+        whatsappBtn.click();
+        e.preventDefault();
+    }
+    
+    // Arrow keys: Navigate between leads
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        moveToNextLead();
+        e.preventDefault();
+    }
+    
+    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        if (selectedLeadId) {
+            const current = document.querySelector(`[data-lead-id="${selectedLeadId}"]`);
+            const currentIndex = parseInt(current.dataset.index);
+            const prev = document.querySelector(`[data-index="${currentIndex - 1}"]`);
+            if (prev) {
+                const prevId = parseInt(prev.dataset.leadId);
+                selectLead(prevId);
+                prev.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        e.preventDefault();
+    }
+    
+    // V: Toggle view
+    if (e.key === 'v' || e.key === 'V') {
+        switchView(currentView === 'card' ? 'table' : 'card');
+        e.preventDefault();
+    }
+    
+    // ?: Show shortcuts help
+    if (e.key === '?') {
+        showShortcutsHelp();
+        e.preventDefault();
+    }
+});
+
+// ===== CARD CLICK SELECTION =====
+document.querySelectorAll('.lead-card, tr[data-lead-id]').forEach(el => {
+    el.addEventListener('click', function(e) {
+        // Don't select if clicking a button
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+        
+        const leadId = parseInt(this.dataset.leadId);
+        selectLead(leadId);
+    });
+});
+
+// ===== HELPERS =====
+function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('show');
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('show');
+}
+
+function showNotification(message, type = 'info') {
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.style.position = 'fixed';
+    alert.style.top = '20px';
+    alert.style.right = '20px';
+    alert.style.zIndex = '9999';
+    alert.style.minWidth = '300px';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alert);
+    
+    setTimeout(() => {
+        alert.remove();
+    }, 3000);
+}
+
+function showShortcutsHelp() {
+    const shortcuts = `
+        <strong>Keyboard Shortcuts:</strong><br><br>
+        <kbd>1-5</kbd> Select leads 1-5<br>
+        <kbd>W</kbd> Quick WhatsApp<br>
+        <kbd>C</kbd> Mark as Contacted<br>
+        <kbd>F</kbd> Schedule Follow-up<br>
+        <kbd>S</kbd> Skip Lead<br>
+        <kbd>Enter</kbd> Open WhatsApp<br>
+        <kbd>↑↓←→</kbd> Navigate leads<br>
+        <kbd>V</kbd> Toggle view<br>
+        <kbd>?</kbd> Show this help
+    `;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal fade show';
+    modal.style.display = 'block';
+    modal.style.background = 'rgba(0,0,0,0.5)';
+    modal.innerHTML = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Keyboard Shortcuts</h5>
+                    <button type="button" class="btn-close" onclick="this.closest('.modal').remove()"></button>
+                </div>
+                <div class="modal-body">
+                    ${shortcuts}
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+// ===== INITIALIZATION =====
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore preferred view
+    const savedView = localStorage.getItem('preferredView');
+    if (savedView) {
+        switchView(savedView);
+    }
+    
+    // Auto-select first lead
+    const firstLead = document.querySelector('[data-index="1"]');
+    if (firstLead) {
+        const firstId = parseInt(firstLead.dataset.leadId);
+        selectLead(firstId);
+    }
+    
+    // Show keyboard hint
+    setTimeout(() => {
+        const hint = document.getElementById('keyboardHint');
+        hint.style.display = 'block';
+        setTimeout(() => {
+            hint.style.display = 'none';
+        }, 3000);
+    }, 1000);
+});
+</script>
+{% endblock %}

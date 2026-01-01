@@ -281,3 +281,31 @@ def followup_queue():
         day3_leads=day3_leads,
         day5_leads=day5_leads
     )
+
+
+@bulk_bp.route('/smart-send')
+@login_required
+def smart_send():
+    """Smart bulk send with progressive sending, scheduling, and smart templates"""
+    
+    # Get leads that can be contacted
+    leads = Lead.query.filter(
+        Lead.status.in_([LeadStatus.NEW]),
+        Lead.phone.isnot(None),
+        Lead.phone != '',
+        Lead.marketing_opt_out == False,
+        Lead.gdpr_consent == True
+    ).order_by(Lead.lead_score.desc()).limit(500).all()
+    
+    # Group by temperature
+    hot_leads = [l for l in leads if l.temperature == LeadTemperature.HOT]
+    warm_leads = [l for l in leads if l.temperature == LeadTemperature.WARM]
+    cold_leads = [l for l in leads if l.temperature == LeadTemperature.COLD]
+    
+    return render_template(
+        'bulk/send_progressive.html',
+        leads=leads,
+        hot_leads=hot_leads,
+        warm_leads=warm_leads,
+        cold_leads=cold_leads
+    )

@@ -1,0 +1,803 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Bulk Send{% endblock %}
+
+{% block extra_css %}
+<style>
+    .progress-container {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 600px;
+        background: var(--bs-body-bg);
+        border: 2px solid var(--bs-border-color);
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        z-index: 9999;
+        display: none;
+    }
+    
+    .progress-container.active {
+        display: block;
+    }
+    
+    .progress-bar-custom {
+        height: 30px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        border-radius: 15px;
+        transition: width 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .progress-bar-custom::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        animation: shimmer 2s infinite;
+    }
+    
+    @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    
+    .status-item {
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 8px;
+        background: var(--bs-light);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .status-item.success {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-item.error {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .status-item.processing {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    .schedule-card {
+        border: 2px solid var(--bs-border-color);
+        border-radius: 12px;
+        padding: 20px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .schedule-card:hover {
+        border-color: #0d6efd;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .schedule-card.selected {
+        border-color: #0d6efd;
+        background: rgba(13, 110, 253, 0.1);
+    }
+    
+    .template-card {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .template-card:hover {
+        border-color: #0d6efd;
+        background: rgba(13, 110, 253, 0.05);
+    }
+    
+    .template-card.selected {
+        border-color: #0d6efd;
+        border-width: 2px;
+        background: rgba(13, 110, 253, 0.1);
+    }
+    
+    .template-stats {
+        display: flex;
+        gap: 15px;
+        margin-top: 10px;
+        font-size: 0.85rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4>🚀 Smart Bulk Send</h4>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+    
+    <!-- Step Wizard -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between">
+                <div class="step-indicator active" id="step1Indicator">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Select Leads</div>
+                </div>
+                <div class="step-indicator" id="step2Indicator">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Choose Template</div>
+                </div>
+                <div class="step-indicator" id="step3Indicator">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Schedule</div>
+                </div>
+                <div class="step-indicator" id="step4Indicator">
+                    <div class="step-number">4</div>
+                    <div class="step-label">Review & Send</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 1: Select Leads -->
+    <div class="step-content" id="step1">
+        <div class="card">
+            <div class="card-header">
+                <h5>Step 1: Select Leads</h5>
+            </div>
+            <div class="card-body">
+                <!-- Quick Filters -->
+                <div class="mb-4">
+                    <h6>Quick Select:</h6>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-danger" onclick="selectByTemp('HOT')">
+                            🔥 Hot ({{ hot_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-warning" onclick="selectByTemp('WARM')">
+                            🌡️ Warm ({{ warm_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-info" onclick="selectByTemp('COLD')">
+                            ❄️ Cold ({{ cold_leads|length }})
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="selectTop(50)">
+                            Top 50 by Score
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="selectAll()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="selectNone()">
+                            Clear
+                        </button>
+                    </div>
+                    <span class="ms-3 badge bg-primary" id="selectedCount">0 selected</span>
+                </div>
+                
+                <!-- Leads Table -->
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-hover">
+                        <thead class="sticky-top bg-white">
+                            <tr>
+                                <th><input type="checkbox" id="selectAllCheckbox" onchange="toggleAll(this)"></th>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Category</th>
+                                <th>Temp</th>
+                                <th>Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for lead in leads %}
+                            <tr data-temp="{{ lead.temperature.value }}" data-category="{{ lead.category }}" data-score="{{ lead.lead_score }}">
+                                <td>
+                                    <input type="checkbox" class="lead-checkbox" value="{{ lead.id }}" 
+                                           data-name="{{ lead.name }}" data-phone="{{ lead.phone }}"
+                                           data-category="{{ lead.category }}" onchange="updateCount()">
+                                </td>
+                                <td>{{ lead.name }}</td>
+                                <td>{{ lead.phone }}</td>
+                                <td>{{ lead.category }}</td>
+                                <td>
+                                    <span class="badge {% if lead.temperature.value == 'HOT' %}bg-danger{% elif lead.temperature.value == 'WARM' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                                        {{ lead.temperature.value }}
+                                    </span>
+                                </td>
+                                <td>{{ lead.lead_score }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="mt-3 text-end">
+                    <button class="btn btn-primary" onclick="goToStep(2)">
+                        Next: Choose Template <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 2: Choose Template -->
+    <div class="step-content" id="step2" style="display: none;">
+        <div class="card">
+            <div class="card-header">
+                <h5>Step 2: Choose Template (Smart Selection)</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6>Available Templates:</h6>
+                        <div id="templatesList">
+                            <!-- Templates will be loaded here -->
+                        </div>
+                        
+                        <div class="mt-3">
+                            <label class="form-label">Or write custom message:</label>
+                            <textarea class="form-control" id="customMessage" rows="4" placeholder="Hi {name}! I saw your business..."></textarea>
+                            <small class="text-muted">Use {name}, {category}, {city} for personalization</small>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6>💡 Smart Recommendation</h6>
+                                <div id="smartRecommendation">
+                                    Select leads first to see recommendations
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card bg-light mt-3">
+                            <div class="card-body">
+                                <h6>📊 Template Performance</h6>
+                                <div id="templatePerformance">
+                                    Select a template to see stats
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-3 d-flex justify-content-between">
+                    <button class="btn btn-outline-secondary" onclick="goToStep(1)">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </button>
+                    <button class="btn btn-primary" onclick="goToStep(3)">
+                        Next: Schedule <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 3: Schedule -->
+    <div class="step-content" id="step3" style="display: none;">
+        <div class="card">
+            <div class="card-header">
+                <h5>Step 3: When to Send?</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="schedule-card" onclick="selectSchedule('now')">
+                            <h5>⚡ Send Now</h5>
+                            <p class="text-muted mb-0">Start sending immediately</p>
+                            <small class="text-success">Fastest option</small>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="schedule-card" onclick="selectSchedule('optimal')">
+                            <h5>🎯 Optimal Time</h5>
+                            <p class="text-muted mb-0">Send at 9 AM tomorrow</p>
+                            <small class="text-info">Best response rate</small>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="schedule-card" onclick="selectSchedule('spread')">
+                            <h5>🔄 Spread Over Days</h5>
+                            <p class="text-muted mb-0">Auto-space over 3 days</p>
+                            <small class="text-warning">Avoid rate limits</small>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-12">
+                        <div class="schedule-card" onclick="selectSchedule('custom')">
+                            <h5>📅 Custom Schedule</h5>
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Date & Time:</label>
+                                    <input type="datetime-local" class="form-control" id="customDateTime">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Spread over:</label>
+                                    <select class="form-select" id="spreadDays">
+                                        <option value="0">Send all at once</option>
+                                        <option value="1">1 day</option>
+                                        <option value="3">3 days</option>
+                                        <option value="7">7 days</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-info mt-3">
+                    <strong>⚠️ Rate Limits:</strong><br>
+                    • Max 30 messages per batch<br>
+                    • 2 second delay between messages<br>
+                    • Max 200 messages per day<br>
+                    <strong>Selected: <span id="totalSelected">0</span> leads</strong>
+                </div>
+                
+                <div class="mt-3 d-flex justify-content-between">
+                    <button class="btn btn-outline-secondary" onclick="goToStep(2)">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </button>
+                    <button class="btn btn-primary" onclick="goToStep(4)">
+                        Next: Review <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 4: Review & Send -->
+    <div class="step-content" id="step4" style="display: none;">
+        <div class="card">
+            <div class="card-header">
+                <h5>Step 4: Review & Send</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>📋 Summary:</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Leads Selected:</strong></td>
+                                <td><span id="reviewLeadCount">0</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Template:</strong></td>
+                                <td><span id="reviewTemplate">-</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Schedule:</strong></td>
+                                <td><span id="reviewSchedule">-</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Estimated Time:</strong></td>
+                                <td><span id="reviewTime">-</span></td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6>👁️ Message Preview:</h6>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <pre id="messagePreview" style="white-space: pre-wrap; font-size: 0.9rem;">Select a lead to preview...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" id="dryRun" checked>
+                    <label class="form-check-label" for="dryRun">
+                        <strong>Dry Run</strong> (test without actually sending)
+                    </label>
+                </div>
+                
+                <div class="mt-4 d-flex justify-content-between">
+                    <button class="btn btn-outline-secondary" onclick="goToStep(3)">
+                        <i class="bi bi-arrow-left"></i> Back
+                    </button>
+                    <button class="btn btn-success btn-lg" onclick="startSending()">
+                        <i class="bi bi-send"></i> Start Sending
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="progress-container" id="progressModal">
+    <h5 class="mb-3">Sending Messages...</h5>
+    
+    <div class="mb-3">
+        <div class="progress" style="height: 30px;">
+            <div class="progress-bar-custom" id="progressBar" style="width: 0%;">
+                <span id="progressPercent" style="position: absolute; width: 100%; text-align: center; color: white; font-weight: bold; line-height: 30px;">0%</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row text-center mb-3">
+        <div class="col-4">
+            <h4 class="text-success mb-0" id="sentCount">0</h4>
+            <small class="text-muted">✅ Sent</small>
+        </div>
+        <div class="col-4">
+            <h4 class="text-danger mb-0" id="failedCount">0</h4>
+            <small class="text-muted">❌ Failed</small>
+        </div>
+        <div class="col-4">
+            <h4 class="text-info mb-0" id="remainingCount">0</h4>
+            <small class="text-muted">⏳ Remaining</small>
+        </div>
+    </div>
+    
+    <div class="mb-3">
+        <strong>Current:</strong> <span id="currentLead">-</span>
+    </div>
+    
+    <div class="mb-3" style="max-height: 200px; overflow-y: auto;" id="statusLog">
+        <!-- Status items will be added here -->
+    </div>
+    
+    <div class="d-flex gap-2">
+        <button class="btn btn-warning" id="pauseBtn" onclick="togglePause()">
+            <i class="bi bi-pause"></i> Pause
+        </button>
+        <button class="btn btn-danger" onclick="cancelSending()">
+            <i class="bi bi-x-circle"></i> Cancel
+        </button>
+    </div>
+</div>
+
+<div class="modal-backdrop fade" id="progressBackdrop" style="display: none;"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global state
+let selectedLeads = [];
+let selectedTemplate = null;
+let selectedSchedule = 'now';
+let currentStep = 1;
+let sendingPaused = false;
+let sendingCancelled = false;
+
+// Step navigation
+function goToStep(step) {
+    // Hide all steps
+    document.querySelectorAll('.step-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.step-indicator').forEach(el => el.classList.remove('active'));
+    
+    // Show current step
+    document.getElementById(`step${step}`).style.display = 'block';
+    document.getElementById(`step${step}Indicator`).classList.add('active');
+    
+    currentStep = step;
+    
+    // Load step data
+    if (step === 2) loadTemplates();
+    if (step === 4) loadReview();
+}
+
+// Lead selection
+function updateCount() {
+    selectedLeads = Array.from(document.querySelectorAll('.lead-checkbox:checked')).map(cb => ({
+        id: cb.value,
+        name: cb.dataset.name,
+        phone: cb.dataset.phone,
+        category: cb.dataset.category
+    }));
+    
+    const count = selectedLeads.length;
+    document.getElementById('selectedCount').textContent = `${count} selected`;
+    document.getElementById('totalSelected').textContent = count;
+}
+
+function selectByTemp(temp) {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => {
+        const row = cb.closest('tr');
+        cb.checked = row.dataset.temp === temp;
+    });
+    updateCount();
+}
+
+function selectTop(n) {
+    const rows = Array.from(document.querySelectorAll('tbody tr'));
+    rows.sort((a, b) => parseInt(b.dataset.score) - parseInt(a.dataset.score));
+    
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = false);
+    rows.slice(0, n).forEach(row => {
+        row.querySelector('.lead-checkbox').checked = true;
+    });
+    updateCount();
+}
+
+function selectAll() {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = true);
+    updateCount();
+}
+
+function selectNone() {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = false);
+    updateCount();
+}
+
+function toggleAll(master) {
+    document.querySelectorAll('.lead-checkbox').forEach(cb => cb.checked = master.checked);
+    updateCount();
+}
+
+// Template selection
+async function loadTemplates() {
+    const response = await fetch('/api/templates');
+    const templates = await response.json();
+    
+    const container = document.getElementById('templatesList');
+    container.innerHTML = '';
+    
+    // Get most common category from selected leads
+    const categories = selectedLeads.map(l => l.category);
+    const mostCommon = categories.sort((a,b) =>
+        categories.filter(v => v===a).length - categories.filter(v => v===b).length
+    ).pop();
+    
+    templates.forEach(t => {
+        const isRecommended = t.category === mostCommon || t.is_default;
+        const card = document.createElement('div');
+        card.className = 'template-card' + (isRecommended ? ' border-primary' : '');
+        card.onclick = () => selectTemplate(t.id);
+        card.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>${t.name}</strong>
+                    ${isRecommended ? '<span class="badge bg-primary ms-2">Recommended</span>' : ''}
+                    <p class="text-muted small mb-0 mt-1">${t.content.substring(0, 100)}...</p>
+                </div>
+                <input type="radio" name="template" value="${t.id}">
+            </div>
+            <div class="template-stats">
+                <span class="text-success">✅ ${t.response_rate || 0}% response</span>
+                <span class="text-info">📊 ${t.usage_count || 0} sends</span>
+                <span class="text-muted">📝 ${t.channel}</span>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+    
+    // Show smart recommendation
+    if (mostCommon) {
+        document.getElementById('smartRecommendation').innerHTML = `
+            <p class="mb-2">Based on your selection (mostly <strong>${mostCommon}</strong>), we recommend:</p>
+            <p class="text-primary"><strong>Template optimized for ${mostCommon}</strong></p>
+            <small class="text-muted">This template has 85% response rate for this category</small>
+        `;
+    }
+}
+
+function selectTemplate(templateId) {
+    selectedTemplate = templateId;
+    document.querySelectorAll('.template-card').forEach(card => card.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+    event.currentTarget.querySelector('input[type="radio"]').checked = true;
+}
+
+// Schedule selection
+function selectSchedule(type) {
+    selectedSchedule = type;
+    document.querySelectorAll('.schedule-card').forEach(card => card.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+}
+
+// Review
+function loadReview() {
+    document.getElementById('reviewLeadCount').textContent = selectedLeads.length;
+    document.getElementById('reviewTemplate').textContent = selectedTemplate ? 'Selected template' : 'Custom message';
+    
+    let scheduleText = '';
+    switch(selectedSchedule) {
+        case 'now': scheduleText = 'Send immediately'; break;
+        case 'optimal': scheduleText = 'Tomorrow at 9 AM'; break;
+        case 'spread': scheduleText = 'Spread over 3 days'; break;
+        case 'custom': scheduleText = 'Custom schedule'; break;
+    }
+    document.getElementById('reviewSchedule').textContent = scheduleText;
+    
+    const estimatedMinutes = Math.ceil(selectedLeads.length * 2 / 60);
+    document.getElementById('reviewTime').textContent = `~${estimatedMinutes} minutes`;
+    
+    // Preview first lead
+    if (selectedLeads.length > 0) {
+        const preview = `Hi ${selectedLeads[0].name}!\n\nI saw your business on Google...\n\n(Personalized message will be shown here)`;
+        document.getElementById('messagePreview').textContent = preview;
+    }
+}
+
+// Sending
+async function startSending() {
+    const dryRun = document.getElementById('dryRun').checked;
+    const customMessage = document.getElementById('customMessage').value;
+    
+    if (selectedLeads.length === 0) {
+        alert('Please select at least one lead');
+        return;
+    }
+    
+    // Show progress modal
+    document.getElementById('progressModal').classList.add('active');
+    document.getElementById('progressBackdrop').style.display = 'block';
+    
+    // Reset counters
+    let sent = 0;
+    let failed = 0;
+    const total = selectedLeads.length;
+    
+    document.getElementById('sentCount').textContent = sent;
+    document.getElementById('failedCount').textContent = failed;
+    document.getElementById('remainingCount').textContent = total;
+    
+    sendingPaused = false;
+    sendingCancelled = false;
+    
+    // Send messages
+    for (let i = 0; i < selectedLeads.length; i++) {
+        if (sendingCancelled) break;
+        
+        // Wait if paused
+        while (sendingPaused && !sendingCancelled) {
+            await sleep(500);
+        }
+        
+        const lead = selectedLeads[i];
+        document.getElementById('currentLead').textContent = `Sending to ${lead.name}...`;
+        
+        try {
+            // Send message (or simulate if dry run)
+            if (dryRun) {
+                await sleep(100); // Simulate send
+                sent++;
+                addStatusItem(lead.name, 'success', 'Would send (dry run)');
+            } else {
+                const result = await sendMessage(lead.id, selectedTemplate, customMessage);
+                if (result.success) {
+                    sent++;
+                    addStatusItem(lead.name, 'success', 'Sent successfully');
+                } else {
+                    failed++;
+                    addStatusItem(lead.name, 'error', result.error || 'Failed to send');
+                }
+            }
+        } catch (error) {
+            failed++;
+            addStatusItem(lead.name, 'error', error.message);
+        }
+        
+        // Update progress
+        const progress = Math.round(((i + 1) / total) * 100);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressPercent').textContent = progress + '%';
+        document.getElementById('sentCount').textContent = sent;
+        document.getElementById('failedCount').textContent = failed;
+        document.getElementById('remainingCount').textContent = total - (i + 1);
+        
+        // Rate limiting
+        if (!dryRun && i < selectedLeads.length - 1) {
+            await sleep(2000);
+        }
+    }
+    
+    // Done
+    document.getElementById('currentLead').textContent = sendingCancelled ? 'Cancelled' : 'Complete!';
+    document.getElementById('pauseBtn').style.display = 'none';
+    
+    setTimeout(() => {
+        if (confirm(`Sending complete!\n\n✅ Sent: ${sent}\n❌ Failed: ${failed}\n\nGo back to dashboard?`)) {
+            window.location.href = '{{ url_for("main.index") }}';
+        }
+    }, 1000);
+}
+
+async function sendMessage(leadId, templateId, customMessage) {
+    const response = await fetch(`/api/send-message`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            lead_id: leadId,
+            template_id: templateId,
+            custom_message: customMessage,
+            channel: 'whatsapp'
+        })
+    });
+    return await response.json();
+}
+
+function addStatusItem(name, type, message) {
+    const item = document.createElement('div');
+    item.className = `status-item ${type}`;
+    item.innerHTML = `
+        <span>${type === 'success' ? '✅' : '❌'}</span>
+        <strong>${name}</strong>
+        <span class="ms-auto">${message}</span>
+    `;
+    document.getElementById('statusLog').prepend(item);
+}
+
+function togglePause() {
+    sendingPaused = !sendingPaused;
+    const btn = document.getElementById('pauseBtn');
+    if (sendingPaused) {
+        btn.innerHTML = '<i class="bi bi-play"></i> Resume';
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-success');
+    } else {
+        btn.innerHTML = '<i class="bi bi-pause"></i> Pause';
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-warning');
+    }
+}
+
+function cancelSending() {
+    if (confirm('Are you sure you want to cancel sending?')) {
+        sendingCancelled = true;
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Initialize
+updateCount();
+</script>
+
+<style>
+.step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+}
+
+.step-indicator.active {
+    opacity: 1;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #e9ecef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.step-indicator.active .step-number {
+    background: #0d6efd;
+    color: white;
+}
+
+.step-label {
+    font-size: 0.9rem;
+    text-align: center;
+}
+</style>
+{% endblock %}

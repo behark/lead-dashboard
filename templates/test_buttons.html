@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block title %}Button Testing{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>🧪 Button Testing Dashboard</h2>
+    <p class="text-muted">Automated testing of all dashboard buttons</p>
+    
+    <div class="row mt-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Test Results</h5>
+                </div>
+                <div class="card-body">
+                    <div id="testResults">
+                        <p class="text-muted">Click "Run All Tests" to start...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0">Console Log</h6>
+                </div>
+                <div class="card-body">
+                    <pre id="consoleLog" style="max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; font-size: 0.85rem;"></pre>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Test Controls</h6>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-primary w-100 mb-2" onclick="runAllTests()">
+                        <i class="bi bi-play-fill"></i> Run All Tests
+                    </button>
+                    <button class="btn btn-outline-secondary w-100 mb-2" onclick="clearResults()">
+                        <i class="bi bi-trash"></i> Clear Results
+                    </button>
+                    <button class="btn btn-outline-info w-100" onclick="exportResults()">
+                        <i class="bi bi-download"></i> Export Results
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="mb-0">Test Summary</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Total Tests:</span>
+                        <strong id="totalTests">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-success">✅ Passed:</span>
+                        <strong id="passedTests">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-danger">❌ Failed:</span>
+                        <strong id="failedTests">0</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-warning">⏭️ Skipped:</span>
+                        <strong id="skippedTests">0</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let testResults = [];
+let consoleMessages = [];
+
+// Capture console logs
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = function(...args) {
+    consoleMessages.push('[LOG] ' + args.join(' '));
+    updateConsoleLog();
+    originalConsoleLog.apply(console, args);
+};
+
+console.error = function(...args) {
+    consoleMessages.push('[ERROR] ' + args.join(' '));
+    updateConsoleLog();
+    originalConsoleError.apply(console, args);
+};
+
+console.warn = function(...args) {
+    consoleMessages.push('[WARN] ' + args.join(' '));
+    updateConsoleLog();
+    originalConsoleWarn.apply(console, args);
+};
+
+function updateConsoleLog() {
+    document.getElementById('consoleLog').textContent = consoleMessages.slice(-50).join('\n');
+}
+
+// Test runner
+async function runAllTests() {
+    testResults = [];
+    consoleMessages = [];
+    updateResults();
+    
+    addResult('info', 'Starting test suite...');
+    
+    // Test 1: Check if jQuery/Bootstrap is loaded
+    await testBootstrapLoaded();
+    
+    // Test 2: Check if all required functions exist
+    await testFunctionsExist();
+    
+    // Test 3: Test API endpoints
+    await testAPIEndpoints();
+    
+    // Test 4: Test button click handlers
+    await testButtonHandlers();
+    
+    // Test 5: Test WhatsApp link generation
+    await testWhatsAppLinks();
+    
+    // Test 6: Test keyboard shortcuts
+    await testKeyboardShortcuts();
+    
+    // Test 7: Test view toggle
+    await testViewToggle();
+    
+    // Test 8: Test selection functionality
+    await testSelection();
+    
+    addResult('info', 'All tests completed!');
+    updateSummary();
+}
+
+async function testBootstrapLoaded() {
+    addResult('test', 'Testing: Bootstrap loaded');
+    try {
+        if (typeof bootstrap !== 'undefined') {
+            addResult('pass', '✅ Bootstrap is loaded');
+        } else {
+            addResult('fail', '❌ Bootstrap is not loaded');
+        }
+    } catch (error) {
+        addResult('fail', '❌ Error checking Bootstrap: ' + error.message);
+    }
+}
+
+async function testFunctionsExist() {
+    addResult('test', 'Testing: Required functions exist');
+    
+    const requiredFunctions = [
+        'safeQuickWhatsApp',
+        'safeMarkContacted',
+        'safeScheduleFollowup',
+        'safeSkipLead',
+        'safeSwitchView',
+        'showSuccess'
+    ];
+    
+    let allExist = true;
+    for (const func of requiredFunctions) {
+        if (typeof window[func] === 'function') {
+            addResult('pass', `✅ ${func} exists`);
+        } else {
+            addResult('fail', `❌ ${func} is missing`);
+            allExist = false;
+        }
+    }
+    
+    if (allExist) {
+        addResult('pass', '✅ All required functions exist');
+    }
+}
+
+async function testAPIEndpoints() {
+    addResult('test', 'Testing: API endpoints');
+    
+    const endpoints = [
+        '/api/templates',
+        '/api/hot-leads'
+    ];
+    
+    for (const endpoint of endpoints) {
+        try {
+            const response = await fetch(endpoint);
+            if (response.ok) {
+                addResult('pass', `✅ ${endpoint} is accessible`);
+            } else {
+                addResult('fail', `❌ ${endpoint} returned ${response.status}`);
+            }
+        } catch (error) {
+            addResult('fail', `❌ ${endpoint} error: ${error.message}`);
+        }
+    }
+}
+
+async function testButtonHandlers() {
+    addResult('test', 'Testing: Button click handlers');
+    
+    const buttons = document.querySelectorAll('button');
+    let withHandlers = 0;
+    let withoutHandlers = 0;
+    
+    buttons.forEach(btn => {
+        if (btn.onclick || btn.getAttribute('onclick') || btn.hasAttribute('data-bs-toggle')) {
+            withHandlers++;
+        } else if (btn.type !== 'submit') {
+            withoutHandlers++;
+        }
+    });
+    
+    addResult('pass', `✅ ${withHandlers} buttons have handlers`);
+    if (withoutHandlers > 0) {
+        addResult('warn', `⚠️  ${withoutHandlers} buttons without handlers`);
+    }
+}
+
+async function testWhatsAppLinks() {
+    addResult('test', 'Testing: WhatsApp links');
+    
+    const links = document.querySelectorAll('a[href*="wa.me"]');
+    let valid = 0;
+    let invalid = 0;
+    
+    links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href !== 'null' && href !== 'undefined' && href.includes('wa.me/')) {
+            valid++;
+        } else {
+            invalid++;
+        }
+    });
+    
+    addResult('pass', `✅ ${valid} valid WhatsApp links`);
+    if (invalid > 0) {
+        addResult('fail', `❌ ${invalid} invalid WhatsApp links`);
+    }
+}
+
+async function testKeyboardShortcuts() {
+    addResult('test', 'Testing: Keyboard shortcuts');
+    
+    // Simulate key press
+    const testKeys = ['1', '2', 'W', 'C', 'F', 'S', 'V', '?'];
+    let handled = 0;
+    
+    testKeys.forEach(key => {
+        const event = new KeyboardEvent('keydown', { key: key });
+        const defaultPrevented = !document.dispatchEvent(event);
+        if (defaultPrevented) {
+            handled++;
+        }
+    });
+    
+    if (handled > 0) {
+        addResult('pass', `✅ ${handled} keyboard shortcuts are active`);
+    } else {
+        addResult('warn', `⚠️  No keyboard shortcuts detected (may be on wrong page)`);
+    }
+}
+
+async function testViewToggle() {
+    addResult('test', 'Testing: View toggle');
+    
+    const cardViewBtn = document.getElementById('cardViewBtn');
+    const tableViewBtn = document.getElementById('tableViewBtn');
+    
+    if (cardViewBtn && tableViewBtn) {
+        addResult('pass', '✅ View toggle buttons exist');
+        
+        // Test if they have onclick handlers
+        if (cardViewBtn.onclick || cardViewBtn.getAttribute('onclick')) {
+            addResult('pass', '✅ Card view button has handler');
+        } else {
+            addResult('fail', '❌ Card view button missing handler');
+        }
+        
+        if (tableViewBtn.onclick || tableViewBtn.getAttribute('onclick')) {
+            addResult('pass', '✅ Table view button has handler');
+        } else {
+            addResult('fail', '❌ Table view button missing handler');
+        }
+    } else {
+        addResult('skip', '⏭️  View toggle not on this page');
+    }
+}
+
+async function testSelection() {
+    addResult('test', 'Testing: Lead selection');
+    
+    const checkboxes = document.querySelectorAll('.lead-checkbox');
+    if (checkboxes.length > 0) {
+        addResult('pass', `✅ ${checkboxes.length} selectable leads found`);
+        
+        // Test if they have change handlers
+        let withHandlers = 0;
+        checkboxes.forEach(cb => {
+            if (cb.onchange || cb.getAttribute('onchange')) {
+                withHandlers++;
+            }
+        });
+        
+        if (withHandlers > 0) {
+            addResult('pass', `✅ ${withHandlers} checkboxes have change handlers`);
+        } else {
+            addResult('fail', '❌ Checkboxes missing change handlers');
+        }
+    } else {
+        addResult('skip', '⏭️  No selectable leads on this page');
+    }
+}
+
+function addResult(type, message) {
+    testResults.push({ type, message, timestamp: new Date().toISOString() });
+    updateResults();
+}
+
+function updateResults() {
+    const container = document.getElementById('testResults');
+    container.innerHTML = testResults.map(result => {
+        let className = 'text-muted';
+        let icon = 'ℹ️';
+        
+        if (result.type === 'pass') {
+            className = 'text-success';
+            icon = '✅';
+        } else if (result.type === 'fail') {
+            className = 'text-danger';
+            icon = '❌';
+        } else if (result.type === 'warn') {
+            className = 'text-warning';
+            icon = '⚠️';
+        } else if (result.type === 'test') {
+            className = 'text-primary';
+            icon = '🧪';
+        } else if (result.type === 'skip') {
+            className = 'text-secondary';
+            icon = '⏭️';
+        }
+        
+        return `<div class="${className} mb-2">${icon} ${result.message}</div>`;
+    }).join('');
+    
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
+}
+
+function updateSummary() {
+    const total = testResults.filter(r => ['pass', 'fail', 'skip'].includes(r.type)).length;
+    const passed = testResults.filter(r => r.type === 'pass').length;
+    const failed = testResults.filter(r => r.type === 'fail').length;
+    const skipped = testResults.filter(r => r.type === 'skip').length;
+    
+    document.getElementById('totalTests').textContent = total;
+    document.getElementById('passedTests').textContent = passed;
+    document.getElementById('failedTests').textContent = failed;
+    document.getElementById('skippedTests').textContent = skipped;
+}
+
+function clearResults() {
+    testResults = [];
+    consoleMessages = [];
+    updateResults();
+    updateConsoleLog();
+    updateSummary();
+}
+
+function exportResults() {
+    const data = {
+        timestamp: new Date().toISOString(),
+        results: testResults,
+        console: consoleMessages,
+        summary: {
+            total: testResults.filter(r => ['pass', 'fail', 'skip'].includes(r.type)).length,
+            passed: testResults.filter(r => r.type === 'pass').length,
+            failed: testResults.filter(r => r.type === 'fail').length,
+            skipped: testResults.filter(r => r.type === 'skip').length
+        }
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'button-test-results.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// Auto-run tests on page load
+window.addEventListener('load', function() {
+    setTimeout(() => {
+        addResult('info', 'Page loaded. Ready to run tests.');
+    }, 1000);
+});
+</script>
+{% endblock %}

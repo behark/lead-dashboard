@@ -305,11 +305,13 @@
                                     <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, null)">
                                         <i class="bi bi-pencil"></i> Custom Message
                                     </a></li>
-                                    {% for t in templates if t.channel.value == 'whatsapp' %}
-                                    <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, {{ t.id }})">
-                                        <i class="bi bi-file-text"></i> {{ t.name }}
-                                    </a></li>
-                                    {% endfor %}
+                                    {% if templates %}
+                                        {% for t in templates if t.channel.value == 'whatsapp' %}
+                                        <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, {{ t.id }})">
+                                            <i class="bi bi-file-text"></i> {{ t.name }}
+                                        </a></li>
+                                        {% endfor %}
+                                    {% endif %}
                                 </ul>
                             </div>
                             <!-- Original WhatsApp Web link -->
