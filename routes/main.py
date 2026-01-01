@@ -132,10 +132,10 @@ def index():
         query = query.order_by(Lead.next_followup.asc().nullslast())
     
     # Optimize query: eager load relationships to avoid N+1 (if available)
-    if joinedload and selectinload:
+    # Note: contact_logs is lazy='dynamic' so we can't use selectinload on it
+    if joinedload:
         query = query.options(
-            joinedload(Lead.assigned_user),
-            selectinload(Lead.contact_logs)
+            joinedload(Lead.assigned_user)
         )
     
     # Pagination
@@ -179,16 +179,16 @@ def index():
 @login_required
 def lead_detail(lead_id):
     # Eager load relationships to avoid N+1 queries (if available)
-    if joinedload and selectinload:
+    # Note: contact_logs is lazy='dynamic' so we query it separately
+    if joinedload:
         lead = Lead.query.options(
-            joinedload(Lead.assigned_user),
-            selectinload(Lead.contact_logs).joinedload(ContactLog.user)
+            joinedload(Lead.assigned_user)
         ).get_or_404(lead_id)
     else:
         lead = Lead.query.get_or_404(lead_id)
     
-    # Get contact history (already loaded via selectinload)
-    contact_logs = sorted(lead.contact_logs, key=lambda x: x.sent_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    # Get contact history (query separately since it's dynamic)
+    contact_logs = lead.contact_logs.order_by(ContactLog.sent_at.desc()).all()
     
     # Get available templates (cached)
     templates = get_cached_templates()
