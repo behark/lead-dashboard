@@ -410,6 +410,11 @@ def bulk_action():
             lead.calculate_score()
         flash(f'Scores recalculated for {len(leads)} leads.', 'success')
     
+    elif action == 'personal_whatsapp':
+        # Redirect to personal WhatsApp bulk sender page
+        lead_ids_str = ','.join(str(lead.id) for lead in leads)
+        return redirect(url_for('main.personal_whatsapp_bulk', lead_ids=lead_ids_str))
+    
     db.session.commit()
     return redirect(url_for('main.index'))
 
@@ -526,6 +531,70 @@ def get_job_status(job_id):
         'progress_percent': job.progress_percent,
         'results': job.results or {}
     })
+
+
+@main_bp.route('/personal-whatsapp-bulk')
+@login_required
+def personal_whatsapp_bulk():
+    """Bulk send via personal WhatsApp - opens WhatsApp Web links in sequence"""
+    lead_ids_str = request.args.get('lead_ids', '')
+    
+    if not lead_ids_str:
+        flash('No leads selected.', 'warning')
+        return redirect(url_for('main.index'))
+    
+    try:
+        lead_ids = [int(id) for id in lead_ids_str.split(',') if id]
+    except ValueError:
+        flash('Invalid lead IDs.', 'danger')
+        return redirect(url_for('main.index'))
+    
+    leads = Lead.query.filter(Lead.id.in_(lead_ids)).all()
+    
+    # Get templates for message selection
+    templates = get_cached_templates()
+    whatsapp_templates = [t for t in templates if t.channel == ContactChannel.WHATSAPP]
+    
+    # Generate WhatsApp links for each lead
+    whatsapp_links = []
+    for lead in leads:
+        if not lead.phone:
+            continue
+        
+        # Use existing whatsapp_link if available, otherwise generate one
+        if lead.whatsapp_link:
+            whatsapp_links.append({
+                'lead_id': lead.id,
+                'name': lead.name,
+                'phone': lead.phone,
+                'link': lead.whatsapp_link,
+                'message': lead.first_message or ''
+            })
+        else:
+            # Generate WhatsApp Web link
+            from services.phone_service import format_phone_international
+            import urllib.parse
+            
+            formatted_phone = format_phone_international(lead.phone, lead.country)
+            # Remove + and spaces for WhatsApp link
+            clean_phone = formatted_phone.replace('+', '').replace(' ', '').replace('-', '')
+            
+            message = lead.first_message or f"Hi {lead.name}! I saw your business on Google and wanted to reach out."
+            encoded_message = urllib.parse.quote(message)
+            
+            whatsapp_link = f"https://wa.me/{clean_phone}?text={encoded_message}"
+            
+            whatsapp_links.append({
+                'lead_id': lead.id,
+                'name': lead.name,
+                'phone': lead.phone,
+                'link': whatsapp_link,
+                'message': message
+            })
+    
+    return render_template('bulk/personal_whatsapp.html',
+                         leads_data=whatsapp_links,
+                         templates=whatsapp_templates)
 
 
 @main_bp.route('/bulk-job/<int:job_id>/cancel', methods=['POST'])

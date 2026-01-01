@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Send via Personal WhatsApp{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4><i class="bi bi-whatsapp text-success"></i> Send via Personal WhatsApp</h4>
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i>
+                <strong>How it works:</strong> This will open WhatsApp Web links in sequence. Make sure you're logged into WhatsApp Web in your browser.
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Send Settings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Delay Between Messages</label>
+                            <select class="form-select" id="delaySelect">
+                                <option value="2">2 seconds (Fast)</option>
+                                <option value="5" selected>5 seconds (Recommended)</option>
+                                <option value="10">10 seconds (Slow)</option>
+                                <option value="15">15 seconds (Very Slow)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Open Mode</label>
+                            <select class="form-select" id="openMode">
+                                <option value="sequential" selected>Sequential (One at a time)</option>
+                                <option value="all">All at once (Multiple tabs)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Actions</label>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-success" id="startSending">
+                                    <i class="bi bi-play-fill"></i> Start Sending
+                                </button>
+                                <button class="btn btn-outline-danger d-none" id="stopSending">
+                                    <i class="bi bi-stop-fill"></i> Stop
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Leads to Send (<span id="totalCount">{{ leads_data|length }}</span>)</h5>
+                    <div>
+                        <span class="badge bg-success" id="sentCount">0 sent</span>
+                        <span class="badge bg-secondary" id="remainingCount">{{ leads_data|length }} remaining</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="5%">#</th>
+                                    <th width="20%">Name</th>
+                                    <th width="15%">Phone</th>
+                                    <th width="40%">Message Preview</th>
+                                    <th width="20%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leadsTable">
+                                {% for item in leads_data %}
+                                <tr data-lead-id="{{ item.lead_id }}" data-link="{{ item.link }}">
+                                    <td>{{ loop.index }}</td>
+                                    <td><strong>{{ item.name }}</strong></td>
+                                    <td><code>{{ item.phone }}</code></td>
+                                    <td>
+                                        <small class="text-muted">{{ item.message[:100] }}{% if item.message|length > 100 %}...{% endif %}</small>
+                                    </td>
+                                    <td>
+                                        <a href="{{ item.link }}" target="_blank" class="btn btn-sm btn-success" data-link="{{ item.link }}">
+                                            <i class="bi bi-whatsapp"></i> Open
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-secondary mark-sent" data-lead-id="{{ item.lead_id }}">
+                                            <i class="bi bi-check"></i> Mark Sent
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let leadsData = {{ leads_data|tojson }};
+let currentIndex = 0;
+let isSending = false;
+let delay = 5000; // Default 5 seconds
+let openMode = 'sequential';
+
+// Update delay when changed
+document.getElementById('delaySelect').addEventListener('change', function() {
+    delay = parseInt(this.value) * 1000;
+});
+
+// Update open mode
+document.getElementById('openMode').addEventListener('change', function() {
+    openMode = this.value;
+});
+
+// Start sending
+document.getElementById('startSending').addEventListener('click', function() {
+    if (leadsData.length === 0) {
+        alert('No leads to send!');
+        return;
+    }
+    
+    isSending = true;
+    this.classList.add('d-none');
+    document.getElementById('stopSending').classList.remove('d-none');
+    currentIndex = 0;
+    
+    if (openMode === 'all') {
+        // Open all at once
+        leadsData.forEach((lead, index) => {
+            setTimeout(() => {
+                window.open(lead.link, '_blank');
+                markAsSent(lead.lead_id);
+            }, index * 500); // Stagger by 500ms to avoid popup blocker
+        });
+        isSending = false;
+        document.getElementById('startSending').classList.remove('d-none');
+        document.getElementById('stopSending').classList.add('d-none');
+    } else {
+        // Sequential sending
+        sendNext();
+    }
+});
+
+// Stop sending
+document.getElementById('stopSending').addEventListener('click', function() {
+    isSending = false;
+    this.classList.add('d-none');
+    document.getElementById('startSending').classList.remove('d-none');
+});
+
+function sendNext() {
+    if (!isSending || currentIndex >= leadsData.length) {
+        isSending = false;
+        document.getElementById('startSending').classList.remove('d-none');
+        document.getElementById('stopSending').classList.add('d-none');
+        return;
+    }
+    
+    const lead = leadsData[currentIndex];
+    const row = document.querySelector(`tr[data-lead-id="${lead.lead_id}"]`);
+    
+    if (row) {
+        // Highlight current row
+        row.classList.add('table-warning');
+        
+        // Open WhatsApp link
+        window.open(lead.link, '_blank');
+        
+        // Mark as sent after a short delay
+        setTimeout(() => {
+            markAsSent(lead.lead_id);
+            row.classList.remove('table-warning');
+            row.classList.add('table-success');
+        }, 1000);
+    }
+    
+    currentIndex++;
+    updateCounters();
+    
+    // Schedule next
+    setTimeout(() => {
+        sendNext();
+    }, delay);
+}
+
+function markAsSent(leadId) {
+    // Update UI
+    const row = document.querySelector(`tr[data-lead-id="${leadId}"]`);
+    if (row) {
+        const markBtn = row.querySelector('.mark-sent');
+        if (markBtn) {
+            markBtn.classList.remove('btn-outline-secondary');
+            markBtn.classList.add('btn-success');
+            markBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Sent';
+            markBtn.disabled = true;
+        }
+    }
+    updateCounters();
+}
+
+function updateCounters() {
+    const sent = document.querySelectorAll('.mark-sent.btn-success').length;
+    const remaining = leadsData.length - sent;
+    
+    document.getElementById('sentCount').textContent = `${sent} sent`;
+    document.getElementById('remainingCount').textContent = `${remaining} remaining`;
+}
+
+// Manual mark as sent
+document.querySelectorAll('.mark-sent').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const leadId = this.dataset.leadId;
+        markAsSent(leadId);
+    });
+});
+</script>
+
+<style>
+.table-warning {
+    background-color: #fff3cd !important;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.table-success {
+    background-color: #d1e7dd !important;
+}
+</style>
+{% endblock %}
