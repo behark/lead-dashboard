@@ -1,0 +1,11 @@
+# Dependencies for lead_finder.py script
+# Install with: pip install -r requirements-lead-finder.txt
+
+# Web scraping
+beautifulsoup4==4.12.2
+
+# HTTP requests
+requests==2.31.0
+
+# Environment variables
+python-dotenv==1.0.0

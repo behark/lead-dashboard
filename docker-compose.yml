@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql://leaduser:leadpass@db:5432/leaddb
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+    env_file:
+      - lead_dashboard/.env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./lead_dashboard:/app
+      - ./backups:/app/backups
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=leaduser
+      - POSTGRES_PASSWORD=leadpass
+      - POSTGRES_DB=leaddb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leaduser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    command: rq worker default --url redis://redis:6379/0
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql://leaduser:leadpass@db:5432/leaddb
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - lead_dashboard/.env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./lead_dashboard:/app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

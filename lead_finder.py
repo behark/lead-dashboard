@@ -1,15 +1,12 @@
 import requests
 import csv
 import time
-import re
 import os
 import urllib.parse
 import logging
 from datetime import datetime, timedelta, timezone
-from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any
-from functools import wraps
 
 # Setup logging first
 logging.basicConfig(
@@ -31,20 +28,21 @@ except ImportError:
 
 # ============== CONFIGURATION ==============
 # Load API keys from environment variables
-API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+YELP_API_KEY = os.getenv("YELP_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Validate required environment variables
-if not API_KEY:
-    raise ValueError("GOOGLE_MAPS_API_KEY environment variable is required. Please set it in .env file")
+if not YELP_API_KEY:
+    raise ValueError("YELP_API_KEY environment variable is required. Please set it in .env file")
 if not TELEGRAM_BOT_TOKEN:
     logger.warning("TELEGRAM_BOT_TOKEN not set. Telegram notifications will be disabled.")
 if not TELEGRAM_CHAT_ID:
     logger.warning("TELEGRAM_CHAT_ID not set. Telegram notifications will be disabled.")
 
-SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
+# Yelp Fusion API endpoints
+YELP_SEARCH_URL = "https://api.yelp.com/v3/businesses/search"
+YELP_BUSINESS_URL = "https://api.yelp.com/v3/businesses/{business_id}"
 
 # European countries with top 5 cities each
 EUROPE_CITIES = {
@@ -173,7 +171,7 @@ CATEGORIES = [
 
 OUTPUT_FILE = "leads_clean.csv"
 
-# Follow-up timing (5-step sequence)
+# Follow-up timing (4-step sequence)
 FOLLOW_UP_HOURS = {
     1: 24,   # Day 1: Gentle follow-up
     2: 48,   # Day 2: Problem rephrased
@@ -213,86 +211,171 @@ class RateLimiter:
     
     def wait_if_needed(self):
         """Wait if rate limit would be exceeded (thread-safe)"""
+        wait_time = 0.0
+        
         with self.lock:
             now = time.time()
             # Remove old calls
             self.calls = [t for t in self.calls if now - t < self.period]
             
             if len(self.calls) >= self.max_calls:
-                oldest = min(self.calls)
+                oldest = min(self.calls) if self.calls else now
                 wait_time = self.period - (now - oldest) + 0.1
                 if wait_time > 0:
                     logger.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
-                    # Release lock before sleeping
-                    self.lock.release()
-                    try:
-                        time.sleep(wait_time)
-                    finally:
-                        self.lock.acquire()
-                    now = time.time()
-                    self.calls = [t for t in self.calls if now - t < self.period]
             
-            self.calls.append(time.time())
+            self.calls.append(now)
+        
+        # Sleep outside the lock to avoid blocking other threads unnecessarily
+        # This allows other threads to check rate limit while we wait
+        if wait_time > 0:
+            time.sleep(wait_time)
 
 
-# Google Places API: 100 requests per 100 seconds (free tier)
-google_limiter = RateLimiter(max_calls=90, period=100.0)
+# Yelp API: 5,000 requests per day (free tier)
+# Rate limit: Max 5 requests per second (Yelp's limit)
+# We'll use 3 requests per second to stay safe
+yelp_limiter = RateLimiter(max_calls=3, period=1.0)  # 3 calls per second = safe limit
 
 
 # ============== API FUNCTIONS ==============
 def search_places(query: str, pagetoken: Optional[str] = None) -> Dict[str, Any]:
     """
-    Search for places using Google Places API
+    Search for places using Yelp Fusion API
     
     Args:
-        query: Search query string
-        pagetoken: Optional pagination token
+        query: Search query string (e.g., "dentist in Berlin")
+        pagetoken: Optional pagination offset (Yelp uses offset, not token)
     
     Returns:
-        API response as dictionary
+        API response as dictionary (converted to Google Places format for compatibility)
     """
-    google_limiter.wait_if_needed()
+    yelp_limiter.wait_if_needed()
+    
+    headers = {
+        "Authorization": f"Bearer {YELP_API_KEY}"
+    }
+    
+    # Parse query: "category in city" -> term="category", location="city"
+    parts = query.lower().split(" in ")
+    if len(parts) == 2:
+        term = parts[0].strip()
+        location = parts[1].strip()
+    else:
+        # Fallback: use whole query as term, try to extract location
+        term = query
+        location = None
     
     params = {
-        "query": query,
-        "key": API_KEY
+        "term": term,
+        "limit": 50,  # Yelp max is 50 per request
     }
+    
+    if location:
+        params["location"] = location
+    
+    # Yelp uses offset for pagination
     if pagetoken:
-        params["pagetoken"] = pagetoken
+        try:
+            params["offset"] = int(pagetoken)
+        except ValueError:
+            pass
     
     try:
-        response = requests.get(SEARCH_URL, params=params, timeout=10)
+        response = requests.get(YELP_SEARCH_URL, headers=headers, params=params, timeout=10)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Convert Yelp format to Google Places format for compatibility
+        places = []
+        for business in data.get("businesses", []):
+            places.append({
+                "place_id": business.get("id", ""),
+                "name": business.get("name", ""),
+                "formatted_address": ", ".join(business.get("location", {}).get("display_address", [])),
+                "rating": business.get("rating"),
+                "yelp_data": business  # Store full Yelp data for later use
+            })
+        
+        # Calculate next page offset
+        total = data.get("total", 0)
+        current_offset = params.get("offset", 0)
+        next_offset = current_offset + len(places)
+        next_page_token = str(next_offset) if next_offset < total else None
+        
+        result = {
+            "results": places,
+            "status": "OK",
+            "next_page_token": next_page_token
+        }
+        return result
     except requests.RequestException as e:
         logger.error(f"Error searching places for '{query}': {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_data = e.response.json()
+                logger.error(f"Yelp API Error: {error_data}")
+            except:
+                logger.error(f"HTTP Status: {e.response.status_code}")
         return {"results": [], "status": "ERROR"}
 
 
 def get_place_details(place_id: str) -> Dict[str, Any]:
     """
-    Get detailed information about a place
+    Get detailed information about a place using Yelp Fusion API
     
     Args:
-        place_id: Google Places place ID
+        place_id: Yelp business ID
     
     Returns:
-        Place details dictionary
+        Place details dictionary (converted to Google Places format for compatibility)
     """
-    google_limiter.wait_if_needed()
+    yelp_limiter.wait_if_needed()
     
-    params = {
-        "place_id": place_id,
-        "fields": "name,formatted_address,formatted_phone_number,website,rating,url",
-        "key": API_KEY
+    headers = {
+        "Authorization": f"Bearer {YELP_API_KEY}"
     }
     
+    url = YELP_BUSINESS_URL.format(business_id=place_id)
+    
     try:
-        response = requests.get(DETAILS_URL, params=params, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json().get("result", {})
+        data = response.json()
+        
+        # Convert Yelp format to Google Places format for compatibility
+        location = data.get("location", {})
+        address_parts = location.get("display_address", [])
+        
+        result = {
+            "name": data.get("name", ""),
+            "formatted_address": ", ".join(address_parts) if address_parts else "",
+            "formatted_phone_number": data.get("phone", ""),
+            "website": "",  # Yelp Fusion API doesn't provide actual business websites (free tier)
+            "rating": data.get("rating"),
+            "url": data.get("url", ""),  # Yelp business page URL
+            "yelp_data": data  # Store full Yelp data
+        }
+        return result
     except requests.RequestException as e:
-        logger.error(f"Error getting place details for '{place_id}': {e}")
+        is_expected_error = False
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_data = e.response.json()
+                error_code = error_data.get('error', {}).get('code')
+                
+                # specific handling for BUSINESS_UNAVAILABLE
+                if error_code == 'BUSINESS_UNAVAILABLE':
+                    logger.warning(f"Skipping business '{place_id}': details unavailable (likely no reviews).")
+                    is_expected_error = True
+                else:
+                    logger.error(f"Yelp API Error: {error_data}")
+            except:
+                logger.error(f"HTTP Status: {e.response.status_code}")
+        
+        if not is_expected_error:
+            logger.error(f"Error getting place details for '{place_id}': {e}")
+            
         return {}
 
 
@@ -354,18 +437,22 @@ def lead_temperature(score: int) -> str:
 
 
 def suggest_price(lead):
+    """Suggest price for a lead based on score and category"""
     base_price = 200
 
-    if lead["lead_score"] >= 85:
+    lead_score = lead.get("lead_score", 0)
+    category = lead.get("category", "").lower()
+
+    if lead_score >= 85:
         base_price += 200
-    elif lead["lead_score"] >= 70:
+    elif lead_score >= 70:
         base_price += 100
 
-    if "dentist" in lead["category"]:
+    if "dentist" in category:
         base_price += 200
-    if "lawyer" in lead["category"]:
+    if "lawyer" in category:
         base_price += 300
-    if "gym" in lead["category"]:
+    if "gym" in category:
         base_price += 100
 
     return f"{base_price} - {base_price + 200}"
@@ -393,7 +480,7 @@ LANGUAGE_TEMPLATES = {
         "no_website_problem": "Die meisten Unternehmen ohne Website verlieren Kunden an Konkurrenten.",
         "help_offer": "Ich helfe lokalen Unternehmen, professionelle Websites zu erstellen, die mehr Kunden bringen.",
         "cta": "Hätten Sie Zeit für ein kurzes 5-Minuten-Gespräch?",
-        "followup_1": "Hallo 👋\n\nIch melde mich nochmal wegen *{name)}*.\n\nKeine Eile — wollte nur fragen, ob Sie interessiert sind?",
+        "followup_1": "Hallo 👋\n\nIch melde mich nochmal wegen *{name}*.\n\nKeine Eile — wollte nur fragen, ob Sie interessiert sind?",
         "followup_2": "Hallo,\n\nKurze Frage: Wenn jemand in {city} nach Ihren Diensten sucht, findet er Sie leicht?\n\nEine Website hilft, rund um die Uhr gefunden zu werden.\n\nGespräch?",
         "followup_3": "Hallo,\n\nIch wollte etwas teilen.\n\nIch habe einem ähnlichen Unternehmen in {city} geholfen.\n\nSie bekommen jetzt 5-10 mehr Anfragen pro Monat.\n\nInteressiert?",
         "followup_4": "Hallo,\n\nLetzte Nachricht — wenn Sie jemals Hilfe mit einer Website brauchen, melden Sie sich.\n\nViel Erfolg! 🙌",
@@ -734,21 +821,6 @@ CATEGORY_MESSAGES = {
     },
 }
 
-# Default fallback message
-DEFAULT_MESSAGE = {
-    "first": (
-        "Përshëndetje 👋\n\n"
-        "Pashë *{name}* në Google — {rating}⭐ super!\n\n"
-        "Keni uebsajt? Kam një ide si mund të sillni më shumë klientë.\n\n"
-        "2 min bisedë?"
-    ),
-    "followup_1": "Përshëndetje 👋\n\nPo ju shkruaj përsëri për *{name}*.\n\nS'ka nxitim — thjesht doja me pyt a jeni të interesuar?",
-    "followup_2": "Përshëndetje,\n\nA menduat për mesazhin tim për *{name}*?\n\nJam i lirë për një bisedë të shkurtër nëse keni interes.",
-    "followup_3": "Përshëndetje,\n\nDoja me ju tregue disa punë që kam bërë për biznese si juaji.\n\nNëse doni të shihni shembuj, më tregoni.\n\nInteresante?",
-    "followup_4": "Përshëndetje!\n\nMesazhi i fundit nga unë - nëse ndonjëherë keni nevojë për uebsajt, më shkruani.\n\nSuksese! 🙌",
-}
-
-
 def get_category_key(category):
     """Map category to message template key"""
     category_lower = category.lower()
@@ -803,9 +875,26 @@ def get_category_key(category):
 
 
 def generate_first_message(lead):
-    """Generate language-specific first message based on city/country"""
+    """Generate language-specific first message based on city/country and category"""
     city = lead.get('city', '')
+    category = lead.get('category', '')
     lang = get_language_for_city(city)
+    
+    # Try to use category-specific messages if available (currently only for Albanian)
+    category_key = get_category_key(category)
+    if category_key and category_key in CATEGORY_MESSAGES and lang == "sq":
+        # Use category-specific message for Albanian language
+        rating = lead.get('rating', '')
+        rating_text = f"{rating}" if rating else "⭐"
+        template = CATEGORY_MESSAGES[category_key].get("first", "")
+        if template:
+            return template.format(
+                name=lead.get('name', ''),
+                rating=rating_text,
+                city=city
+            )
+    
+    # Fall back to language templates (multi-language support)
     templates = LANGUAGE_TEMPLATES.get(lang, LANGUAGE_TEMPLATES["en"])
     
     rating = lead.get('rating', '')
@@ -827,7 +916,21 @@ def generate_first_message(lead):
 def get_follow_up_message(lead, step):
     """Get language-specific follow-up message for a specific step (1-4)"""
     city = lead.get('city', '')
+    category = lead.get('category', '')
     lang = get_language_for_city(city)
+    
+    # Try to use category-specific messages if available (currently only for Albanian)
+    category_key = get_category_key(category)
+    if category_key and category_key in CATEGORY_MESSAGES and lang == "sq":
+        key = f"followup_{step}"
+        template = CATEGORY_MESSAGES[category_key].get(key, "")
+        if template:
+            return template.format(
+                name=lead.get('name', ''),
+                city=city
+            )
+    
+    # Fall back to language templates (multi-language support)
     templates = LANGUAGE_TEMPLATES.get(lang, LANGUAGE_TEMPLATES["en"])
     
     key = f"followup_{step}"
@@ -844,63 +947,79 @@ def generate_whatsapp_link(phone, message, city=""):
         return ""
 
     # Clean the phone number
-    phone = (
+    phone_clean = (
         phone.replace(" ", "")
-             .replace("+", "")
              .replace("-", "")
              .replace("(", "")
              .replace(")", "")
     )
-
-    # Add country code based on city/format
-    # Kosovo: 044, 045, 043, 049, 048 -> +383
-    # Albania: 06x -> +355
-    if phone.startswith("0"):
+    
+    # Check if phone already has a country code (starts with + or known country codes)
+    # Known country codes: 383 (Kosovo), 355 (Albania), 49 (Germany), 33 (France), etc.
+    has_country_code = phone_clean.startswith("+")
+    
+    # Remove + if present
+    if phone_clean.startswith("+"):
+        phone_clean = phone_clean[1:]
+    
+    # Check if it already starts with a known country code (2-3 digits)
+    if not has_country_code and len(phone_clean) >= 2:
+        # Check for known country codes
+        known_codes = ["383", "355", "49", "33", "39", "34", "44"]
+        if any(phone_clean.startswith(code) for code in known_codes):
+            has_country_code = True
+    
+    # Only add country code if phone doesn't already have one and starts with 0
+    if not has_country_code and phone_clean.startswith("0"):
         if city in ["Pristina", "Prizren", "Ferizaj", "Gjilan", "Peja", "Mitrovica"]:
             # Kosovo - remove leading 0, add 383
-            phone = "383" + phone[1:]
-        elif city in ["Tirana", "Durres", "Shkoder", "Vlora"]:
+            phone_clean = "383" + phone_clean[1:]
+        elif city in ["Tirana", "Durrës", "Shkodër", "Vlorë"]:
             # Albania - remove leading 0, add 355
-            phone = "355" + phone[1:]
-        elif phone.startswith("04") or phone.startswith("03"):
+            phone_clean = "355" + phone_clean[1:]
+        elif phone_clean.startswith("04") or phone_clean.startswith("03"):
             # Kosovo mobile numbers
-            phone = "383" + phone[1:]
-        elif phone.startswith("06") or phone.startswith("07"):
+            phone_clean = "383" + phone_clean[1:]
+        elif phone_clean.startswith("06") or phone_clean.startswith("07"):
             # Albania mobile numbers
-            phone = "355" + phone[1:]
+            phone_clean = "355" + phone_clean[1:]
 
-    return f"https://wa.me/{phone}?text={urllib.parse.quote(message)}"
+    return f"https://wa.me/{phone_clean}?text={urllib.parse.quote(message)}"
 
 
 # ============== TELEGRAM FUNCTIONS ==============
 def send_telegram_alert(lead):
-    if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN":
+    if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN" or not TELEGRAM_BOT_TOKEN:
         return
 
+    # Use .get() to prevent KeyError crashes
     message = (
         f"HOT LEAD FOUND\n\n"
-        f"Name: {lead['name']}\n"
-        f"City: {lead['city']}\n"
-        f"Rating: {lead['rating']}\n"
-        f"Phone: {lead['phone']}\n"
-        f"Price: {lead['suggested_price']}\n\n"
-        f"WhatsApp: {lead['whatsapp_link']}\n\n"
-        f"Maps: {lead['maps_url']}"
+        f"Name: {lead.get('name', 'Unknown')}\n"
+        f"City: {lead.get('city', 'Unknown')}\n"
+        f"Rating: {lead.get('rating', 'N/A')}\n"
+        f"Phone: {lead.get('phone', 'N/A')}\n"
+        f"Price: {lead.get('suggested_price', 'N/A')}\n\n"
+        f"WhatsApp: {lead.get('whatsapp_link', 'N/A')}\n\n"
+        f"Maps: {lead.get('maps_url', 'N/A')}"
     )
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={
+        response = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": message,
             "disable_web_page_preview": True
-        })
-    except Exception:
-        pass
+        }, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Error sending Telegram alert: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error sending Telegram alert: {e}")
 
 
 def send_follow_up_reminder(lead, follow_up_step):
-    if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN":
+    if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN" or not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
 
     titles = {
@@ -915,48 +1034,62 @@ def send_follow_up_reminder(lead, follow_up_step):
 
     wa_link = generate_whatsapp_link(lead.get('phone', ''), msg, lead.get('city', ''))
 
+    # Use .get() to prevent KeyError crashes
     message = (
         f"{title}\n\n"
-        f"Name: {lead['name']}\n"
-        f"City: {lead['city']}\n"
-        f"Category: {lead['category']}\n"
-        f"Rating: {lead['rating']}\n"
-        f"Price: {lead['suggested_price']}\n\n"
+        f"Name: {lead.get('name', 'Unknown')}\n"
+        f"City: {lead.get('city', 'Unknown')}\n"
+        f"Category: {lead.get('category', 'Unknown')}\n"
+        f"Rating: {lead.get('rating', 'N/A')}\n"
+        f"Price: {lead.get('suggested_price', 'N/A')}\n\n"
         f"WhatsApp: {wa_link}"
     )
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={
+        response = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": message,
             "disable_web_page_preview": True
-        })
-    except Exception:
-        pass
+        }, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.error(f"Error sending Telegram follow-up reminder: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error sending Telegram follow-up reminder: {e}")
 
 
 # ============== FOLLOW-UP SYSTEM ==============
 def get_lead_age_hours(lead):
+    """Get lead age in hours, returns 0 if error"""
     try:
-        created_at = datetime.fromisoformat(lead["created_at"].replace('Z', '+00:00'))
+        created_at_str = lead.get("created_at")
+        if not created_at_str:
+            return 0
+        
+        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         return (now - created_at).total_seconds() / 3600
-    except:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
+        logger.debug(f"Error calculating lead age: {e}")
         return 0
 
 
 def check_follow_ups():
-    """Check existing leads and send follow-up reminders (5-step sequence)"""
+    """Check existing leads and send follow-up reminders (4-step sequence)"""
     if not os.path.exists(OUTPUT_FILE):
         print("No leads file found.")
         return
 
     leads = []
-    with open(OUTPUT_FILE, newline="", encoding="utf-8") as f:
-        leads = list(csv.DictReader(f))
+    try:
+        with open(OUTPUT_FILE, newline="", encoding="utf-8") as f:
+            leads = list(csv.DictReader(f))
+    except (IOError, OSError, csv.Error) as e:
+        logger.error(f"Error reading leads file: {e}")
+        return
 
     updated = False
     for lead in leads:
@@ -980,15 +1113,25 @@ def check_follow_ups():
                 lead["follow_up_sent"] = str(step)
                 updated = True
                 step_names = {1: "Gentle", 2: "Reframe", 3: "Portfolio", 4: "FINAL"}
-                print(f"[FOLLOW-UP #{step} - {step_names.get(step, '')}] {lead['name']} ({lead['category']})")
+                lead_name = lead.get('name', 'Unknown')
+                lead_category = lead.get('category', 'Unknown')
+                logger.info(f"[FOLLOW-UP #{step} - {step_names.get(step, '')}] {lead_name} ({lead_category})")
                 break  # Only send one follow-up at a time
 
     if updated:
-        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=leads[0].keys())
-            writer.writeheader()
-            writer.writerows(leads)
-        print("Follow-ups sent and saved.")
+        try:
+            if leads and len(leads) > 0:
+                with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+                    # Use get_fieldnames() for consistency
+                    fieldnames = get_fieldnames()
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(leads)
+                print("Follow-ups sent and saved.")
+            else:
+                logger.warning("No leads to save")
+        except (IOError, OSError, csv.Error) as e:
+            logger.error(f"Error saving follow-ups: {e}")
     else:
         print("No follow-ups needed.")
 
@@ -1010,11 +1153,15 @@ def save_lead(lead):
     file_exists = os.path.exists(OUTPUT_FILE)
     fieldnames = get_fieldnames()
 
-    with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(lead)
+    try:
+        with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(lead)
+    except (IOError, OSError, csv.Error) as e:
+        logger.error(f"Error saving lead: {e}")
+        raise
 
 
 def load_existing_leads():
@@ -1023,10 +1170,15 @@ def load_existing_leads():
         return set()
 
     existing = set()
-    with open(OUTPUT_FILE, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            existing.add(f"{row.get('name', '')}|{row.get('phone', '')}")
+    try:
+        with open(OUTPUT_FILE, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                existing.add(f"{row.get('name', '')}|{row.get('phone', '')}")
+    except (IOError, OSError, csv.Error) as e:
+        logger.error(f"Error loading existing leads: {e}")
+        return set()  # Return empty set on error to allow processing
+    
     return existing
 
 
@@ -1045,16 +1197,92 @@ def process_place(place: Dict[str, Any], city: str, category: str, existing_lead
         Lead dictionary if valid, None otherwise
     """
     try:
-        details = get_place_details(place["place_id"])
-        
-        # FILTER: must have phone, must NOT have website
-        if not details.get("formatted_phone_number") or details.get("website"):
+        place_id = place.get("place_id")
+        if not place_id:
             return None
         
-        # Check for duplicates
-        lead_key = f"{details.get('name')}|{details.get('formatted_phone_number')}"
-        if lead_key in existing_leads:
+        details = get_place_details(place_id)
+        
+        # Validate that we got valid details
+        if not details or not details.get("name"):
+            logger.debug(f"Invalid or empty details for place_id: {place_id}")
             return None
+        
+        # FILTER: must have phone
+        # Note: Yelp Fusion API (free tier) doesn't provide actual business websites,
+        # only Yelp page URLs. The website field will remain empty.
+        
+        phone = details.get("formatted_phone_number", "")
+        if not phone:
+            return None
+        
+        # FILTER: Only save mobile numbers (for WhatsApp compatibility)
+        # Be conservative: only accept numbers we can verify as mobile
+        is_mobile = False
+        phone_clean = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        
+        if phone_clean.startswith('+49'):  # Germany
+            # Remove +49 and check for mobile prefixes
+            local = phone_clean.replace('+49', '')
+            if local.startswith('0'):
+                local = local[1:]
+            # German mobile prefixes: 15x, 16x, 17x
+            if local.startswith(('15', '16', '17')) and len(local) >= 10:
+                is_mobile = True
+        elif phone_clean.startswith('+383'):  # Kosovo
+            # Kosovo mobile: 044, 045, 043, 049, 048, or 6x, 7x
+            local = phone_clean.replace('+383', '')
+            if local.startswith('0'):
+                local = local[1:]
+            if local.startswith(('4', '6', '7')) and len(local) >= 8:
+                is_mobile = True
+        elif phone_clean.startswith('+355'):  # Albania
+            # Albania mobile: 06x, 07x (9 digits after country code)
+            local = phone_clean.replace('+355', '')
+            if local.startswith(('6', '7')) and len(local) >= 9:
+                is_mobile = True
+        elif phone_clean.startswith('+33'):  # France
+            # French mobile: 06, 07 (10 digits total)
+            local = phone_clean.replace('+33', '')
+            if local.startswith(('6', '7')) and len(local) == 9:
+                is_mobile = True
+        elif phone_clean.startswith('+39'):  # Italy
+            # Italian mobile: 3xx (10 digits total, starts with 3)
+            local = phone_clean.replace('+39', '')
+            if local.startswith('3') and len(local) == 10:
+                is_mobile = True
+        elif phone_clean.startswith('+34'):  # Spain
+            # Spanish mobile: 6xx, 7xx (9 digits)
+            local = phone_clean.replace('+34', '')
+            if local.startswith(('6', '7')) and len(local) == 9:
+                is_mobile = True
+        elif phone_clean.startswith('+44'):  # UK
+            # UK mobile: 7xxx (11 digits total, starts with 7)
+            local = phone_clean.replace('+44', '')
+            if local.startswith('7') and len(local) == 10:
+                is_mobile = True
+        else:
+            # For other countries, try to detect mobile numbers more flexibly
+            # Most European mobile numbers start with country code + mobile prefix
+            # Common mobile prefixes: 3, 4, 5, 6, 7, 8, 9 (varies by country)
+            # Accept if phone has country code and reasonable length (8-15 digits)
+            if phone_clean.startswith('+'):
+                # Has country code - check if it's a reasonable mobile length
+                # Remove country code (1-3 digits) and check remaining length
+                digits_only = ''.join(filter(str.isdigit, phone_clean[1:]))  # Remove + and non-digits
+                if 8 <= len(digits_only) <= 15:
+                    # Could be a mobile number - accept it
+                    # Most European mobile numbers are 9-12 digits after country code
+                    is_mobile = True
+                    logger.debug(f"Accepting potential mobile number from unvalidated country: {phone}")
+        
+        # Skip landlines - only save mobile numbers
+        if not is_mobile:
+            logger.debug(f"Skipping landline: {details.get('name')} - {phone}")
+            return None
+        
+        # Note: Duplicate check is done in main() with proper locking
+        # We don't check here to avoid race conditions
         
         maps_url = details.get("url", "")
         
@@ -1102,6 +1330,8 @@ def process_place(place: Dict[str, Any], city: str, category: str, existing_lead
 def main():
     """Main function to search and process leads"""
     existing_leads = load_existing_leads()
+    # Use a lock for thread-safe access to existing_leads
+    leads_lock = threading.Lock()
     new_count = 0
     stats = {"HOT": 0, "WARM": 0, "COLD": 0}
     
@@ -1121,8 +1351,9 @@ def main():
                 if not places:
                     break
                 
-                # Process places concurrently
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Process places with reduced concurrency to avoid rate limits
+                # Yelp has strict rate limits, so we use fewer workers
+                with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced from 5 to 2
                     future_to_place = {
                         executor.submit(process_place, place, city, category, existing_leads): place
                         for place in places
@@ -1131,21 +1362,31 @@ def main():
                     for future in as_completed(future_to_place):
                         lead = future.result()
                         if lead:
-                            # Check again for duplicates (thread-safe)
-                            lead_key = f"{lead['name']}|{lead['phone']}"
-                            if lead_key not in existing_leads:
-                                existing_leads.add(lead_key)
-                                
-                                # Save lead
-                                save_lead(lead)
-                                new_count += 1
-                                stats[lead["temperature"]] += 1
-                                
-                                logger.info(f"[{lead['temperature']}] {lead['name']} - Score: {lead['lead_score']}")
-                                
-                                # Send Telegram alert for HOT leads
-                                if lead["temperature"] == "HOT":
-                                    send_telegram_alert(lead)
+                            # Check again for duplicates (thread-safe with lock)
+                            lead_key = f"{lead.get('name', '')}|{lead.get('phone', '')}"
+                            
+                            with leads_lock:
+                                if lead_key not in existing_leads:
+                                    existing_leads.add(lead_key)
+                                    
+                                    # Save lead
+                                    try:
+                                        save_lead(lead)
+                                        new_count += 1
+                                        stats[lead.get("temperature", "COLD")] += 1
+                                        
+                                        lead_name = lead.get('name', 'Unknown')
+                                        lead_temp = lead.get('temperature', 'COLD')
+                                        lead_score = lead.get('lead_score', 0)
+                                        logger.info(f"[{lead_temp}] {lead_name} - Score: {lead_score}")
+                                        
+                                        # Send Telegram alert for HOT leads
+                                        if lead.get("temperature") == "HOT":
+                                            send_telegram_alert(lead)
+                                    except Exception as e:
+                                        logger.error(f"Error saving lead {lead_key}: {e}")
+                                        # Remove from set if save failed
+                                        existing_leads.discard(lead_key)
                 
                 # Check for next page
                 token = response.get("next_page_token")

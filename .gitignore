@@ -75,3 +75,35 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Pre-commit
+.pre-commit-config.yaml.bak
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Bandit security reports
+bandit-report.json
+
+# IDE - Additional
+*.sublime-project
+*.sublime-workspace
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# OS - Additional
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+*.csv
