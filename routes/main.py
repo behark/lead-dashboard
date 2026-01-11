@@ -817,6 +817,72 @@ def send_message():
                          templates=whatsapp_templates)
 
 
+@main_bp.route('/personal-whatsapp-bulk')
+@login_required
+def personal_whatsapp_bulk():
+    """Personal WhatsApp bulk sender page - accessed via bulk action redirect"""
+    lead_ids_str = request.args.get('lead_ids', '')
+    
+    if not lead_ids_str:
+        flash('No leads selected.', 'warning')
+        return redirect(url_for('main.index'))
+    
+    try:
+        lead_ids = [int(id) for id in lead_ids_str.split(',') if id]
+    except ValueError:
+        flash('Invalid lead IDs.', 'danger')
+        return redirect(url_for('main.index'))
+    
+    leads = Lead.query.filter(Lead.id.in_(lead_ids)).all()
+    
+    if not leads:
+        flash('No valid leads found.', 'warning')
+        return redirect(url_for('main.index'))
+    
+    # Get templates for message selection
+    templates = get_cached_templates()
+    whatsapp_templates = [t for t in templates if t.channel == ContactChannel.WHATSAPP]
+    
+    # Generate WhatsApp links for each lead
+    from services.phone_service import format_phone_international
+    import urllib.parse
+    
+    whatsapp_links = []
+    for lead in leads:
+        if not lead.phone:
+            continue
+        
+        # Format phone number
+        formatted_phone = format_phone_international(lead.phone, lead.country)
+        clean_phone = formatted_phone.replace('+', '').replace(' ', '').replace('-', '')
+        
+        # Use first_message if available, otherwise generate a professional one
+        if lead.first_message:
+            message = lead.first_message
+        else:
+            # Use default professional template
+            message = f"Përshëndetje {lead.name}! 👋\n\nJam nga Web Solutions Albania dhe e pashë biznesin tuaj në Google Maps.\n\nKam vënë re që nuk keni ende një faqe interneti. A do të donit të diskutojmë se si mund t'ju ndihmojmë?\n\nMe respekt"
+        
+        encoded_message = urllib.parse.quote(message)
+        whatsapp_link = f"https://wa.me/{clean_phone}?text={encoded_message}"
+        
+        whatsapp_links.append({
+            'lead_id': lead.id,
+            'name': lead.name,
+            'phone': lead.phone,
+            'link': whatsapp_link,
+            'message': message
+        })
+    
+    if not whatsapp_links:
+        flash('No leads with valid phone numbers found.', 'warning')
+        return redirect(url_for('main.index'))
+    
+    return render_template('bulk/personal_whatsapp.html',
+                         leads_data=whatsapp_links,
+                         templates=whatsapp_templates)
+
+
 @main_bp.route('/bulk-job/<int:job_id>/cancel', methods=['POST'])
 @login_required
 def cancel_job(job_id):
