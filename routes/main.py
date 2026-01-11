@@ -3,7 +3,18 @@ from flask_login import login_required, current_user
 from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel, SavedFilter, BulkJob
 from models_saas import UsageRecord
 from services.analytics_service import AnalyticsService
-from utils.audit_logger import AuditLogger
+# Import audit logger with graceful fallback
+try:
+    from utils.audit_logger import AuditLogger
+except ImportError:
+    # Create a dummy AuditLogger if import fails
+    class AuditLogger:
+        @staticmethod
+        def log(*args, **kwargs):
+            pass
+        @staticmethod
+        def log_lead_action(*args, **kwargs):
+            pass
 from services.scoring_service import ScoringService
 from services.contact_service import ContactService
 from services.sequence_service import SequenceService
@@ -662,32 +673,65 @@ def bulk_jobs_dashboard():
 @main_bp.route('/bulk-job/<int:job_id>/status')
 @login_required
 def get_job_status(job_id):
-    """Get real-time status of a bulk job"""
+    """Get real-time status of a bulk job with enhanced progress tracking"""
+    from utils.job_queue import get_job_status as get_rq_job_status
+    
     job = db.session.get(BulkJob, job_id)
     if not job:
         abort(404)
     
-    if job.user_id != current_user.id:
+    # Check authorization
+    if job.user_id != current_user.id and not current_user.is_admin:
         return jsonify({'error': 'Unauthorized'}), 403
     
-    return jsonify({
+    # Get detailed status
+    status_data = {
         'id': job.id,
         'status': job.status,
-        'processed': job.processed_items,
-        'total': job.total_items,
-        'successful': job.successful_items,
-        'failed': job.failed_items,
-        'skipped': job.skipped_items,
         'progress_percent': job.progress_percent,
-        'results': job.results or {}
-    })
+        'total_items': job.total_items,
+        'processed_items': job.processed_items,
+        'successful_items': job.successful_items,
+        'failed_items': job.failed_items,
+        'skipped_items': job.skipped_items,
+        'created_at': job.created_at.isoformat() if job.created_at else None,
+        'started_at': job.started_at.isoformat() if job.started_at else None,
+        'completed_at': job.completed_at.isoformat() if job.completed_at else None,
+        'error_message': job.error_message,
+        'estimated_completion': None
+    }
+    
+    # Add estimated completion time for running jobs
+    if job.status == 'running' and job.processed_items > 0:
+        try:
+            elapsed_time = (datetime.now(timezone.utc) - job.started_at).total_seconds()
+            avg_time_per_item = elapsed_time / job.processed_items
+            remaining_items = job.total_items - job.processed_items
+            estimated_seconds = remaining_items * avg_time_per_item
+            estimated_completion = datetime.now(timezone.utc) + timedelta(seconds=estimated_seconds)
+            status_data['estimated_completion'] = estimated_completion.isoformat()
+            status_data['estimated_time_remaining'] = f"{int(estimated_seconds // 60)}m {int(estimated_seconds % 60)}s"
+        except Exception:
+            pass
+    
+    try:
+        rq_status = get_rq_job_status(job_id)
+        if rq_status and rq_status.get('status') != 'not_found':
+            status_data['rq_status'] = rq_status['status']
+            status_data['rq_created_at'] = rq_status.get('created_at')
+    except Exception:
+        pass
+    
+    return jsonify(status_data)
 
 
-@main_bp.route('/personal-whatsapp-bulk')
+@main_bp.route('/send-message', methods=['POST'])
 @login_required
-def personal_whatsapp_bulk():
-    """Bulk send via personal WhatsApp - opens WhatsApp Web links in sequence"""
-    lead_ids_str = request.args.get('lead_ids', '')
+def send_message():
+    """Send message to multiple leads (legacy endpoint)"""
+    lead_ids_str = request.form.get('lead_ids', '')
+    template_id = request.form.get('template_id')
+    custom_message = request.form.get('custom_message', '')
     
     if not lead_ids_str:
         flash('No leads selected.', 'warning')

@@ -2,7 +2,15 @@
 Phone number formatting service for European countries
 """
 import re
+from functools import lru_cache
+import logging
+import time
 
+logger = logging.getLogger(__name__)
+
+# Cache for phone validation results (phone: (is_valid, formatted_phone, error))
+_phone_validation_cache = {}
+_cache_ttl = 3600  # 1 hour cache TTL
 
 # Country codes mapping
 COUNTRY_CODES = {
@@ -130,28 +138,72 @@ def format_for_whatsapp_link(phone, country="Kosovo"):
     return formatted.replace('+', '')
 
 
+@lru_cache(maxsize=512)
+def validate_phone_cached(phone, country="Kosovo"):
+    """Cached version of phone validation for better performance"""
+    return validate_phone(phone, country)
+
+
 def validate_phone(phone, country="Kosovo"):
     """
-    Validate if phone number looks correct
-    Returns: (is_valid, error_message)
+    Validate if phone number looks correct with caching support
+    
+    Args:
+        phone: Phone number string
+        country: Country name for formatting rules
+    
+    Returns:
+        tuple: (is_valid, error_message_or_formatted_phone)
     """
     if not phone:
         return False, "No phone number"
     
-    formatted = format_phone_international(phone, country)
-    if not formatted:
-        return False, "Could not format phone"
+    # Check cache first
+    cache_key = f"{phone}:{country}"
+    current_time = time.time()
     
-    # Remove + for length check
-    digits = formatted.replace('+', '')
+    if cache_key in _phone_validation_cache:
+        cached_result, cache_time = _phone_validation_cache[cache_key]
+        if current_time - cache_time < _cache_ttl:
+            logger.debug(f"Phone validation cache hit for {phone[:10]}...")
+            return cached_result
     
-    # Most international numbers are 10-15 digits
-    if len(digits) < 10:
-        return False, "Phone too short"
-    if len(digits) > 15:
-        return False, "Phone too long"
+    # Perform validation
+    try:
+        formatted = format_phone_international(phone, country)
+        if not formatted:
+            result = (False, "Could not format phone")
+        else:
+            # Additional validation checks
+            digits_only = re.sub(r'[^\d]', '', formatted)
+            if len(digits_only) < 10 or len(digits_only) > 15:
+                result = (False, "Invalid phone number length")
+            else:
+                result = (True, formatted)
+    except Exception as e:
+        logger.exception(f"Error validating phone {phone}: {e}")
+        result = (False, f"Validation error: {str(e)}")
     
-    return True, None
+    # Cache the result
+    _phone_validation_cache[cache_key] = (result, current_time)
+    
+    # Clean cache periodically (remove old entries)
+    if len(_phone_validation_cache) > 1000:
+        _clean_phone_cache()
+    
+    return result
+
+
+def _clean_phone_cache():
+    """Remove expired entries from phone validation cache"""
+    current_time = time.time()
+    expired_keys = [
+        key for key, (_, cache_time) in _phone_validation_cache.items()
+        if current_time - cache_time > _cache_ttl
+    ]
+    for key in expired_keys:
+        del _phone_validation_cache[key]
+    logger.info(f"Cleaned {len(expired_keys)} expired phone validation cache entries")
 
 
 def detect_country_from_phone(phone):

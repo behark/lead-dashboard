@@ -63,18 +63,19 @@ def get_queue(queue_name='default'):
 
 def enqueue_job(func, *args, **kwargs):
     """
-    Enqueue a job for background processing
+    Enqueue a job for background processing with priority support
     
     Args:
         func: Function to execute
         *args: Positional arguments for the function
-        **kwargs: Keyword arguments (job_timeout, queue_name, etc.)
+        **kwargs: Keyword arguments (job_timeout, queue_name, priority, etc.)
     
     Returns:
         Job object or None if queue not available
     """
     queue_name = kwargs.pop('queue_name', 'default')
     job_timeout = kwargs.pop('job_timeout', '10m')
+    priority = kwargs.pop('priority', 0)  # Default priority
     
     queue = get_queue(queue_name)
     if not queue:
@@ -87,13 +88,23 @@ def enqueue_job(func, *args, **kwargs):
             raise
     
     try:
+        # Use priority queue if priority is set
+        if priority != 0:
+            from rq.queue import Queue
+            # Create a priority queue by using queue name with priority
+            priority_queue_name = f"{queue_name}_priority_{priority}"
+            queue = Queue(priority_queue_name, connection=_redis_conn)
+        
         job = queue.enqueue(
             func,
             *args,
             job_timeout=job_timeout,
             **kwargs
         )
-        logger.info(f"Job {job.id} enqueued in queue '{queue_name}'")
+        
+        # Log job with priority information
+        priority_info = f" (priority: {priority})" if priority != 0 else ""
+        logger.info(f"Job {job.id} enqueued in queue '{queue_name}'{priority_info}")
         return job
     except Exception as e:
         logger.exception(f"Error enqueuing job: {e}")
@@ -162,6 +173,93 @@ def cancel_job(job_id):
     
     try:
         job.cancel()
+        logger.info(f"Job {job_id} cancelled successfully")
         return True
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Error cancelling job {job_id}: {e}")
         return False
+
+
+def get_queue_stats(queue_name='default'):
+    """
+    Get statistics for a specific queue
+    
+    Args:
+        queue_name: Name of the queue
+    
+    Returns:
+        dict with queue statistics
+    """
+    queue = get_queue(queue_name)
+    if not queue:
+        return {'error': 'Queue not available'}
+    
+    try:
+        from rq.registry import StartedJobRegistry, FinishedJobRegistry, FailedJobRegistry
+        
+        return {
+            'queue_name': queue_name,
+            'pending': len(queue),
+            'started': len(StartedJobRegistry(queue.name, connection=_redis_conn)),
+            'finished': len(FinishedJobRegistry(queue.name, connection=_redis_conn)),
+            'failed': len(FailedJobRegistry(queue.name, connection=_redis_conn)),
+            'workers': len(Worker.all(connection=_redis_conn))
+        }
+    except Exception as e:
+        logger.exception(f"Error getting queue stats: {e}")
+        return {'error': str(e)}
+
+
+def clear_queue(queue_name='default'):
+    """
+    Clear all jobs from a queue
+    
+    Args:
+        queue_name: Name of the queue to clear
+    
+    Returns:
+        True if cleared, False otherwise
+    """
+    queue = get_queue(queue_name)
+    if not queue:
+        return False
+    
+    try:
+        queue.empty()
+        logger.info(f"Queue '{queue_name}' cleared successfully")
+        return True
+    except Exception as e:
+        logger.exception(f"Error clearing queue {queue_name}: {e}")
+        return False
+
+
+def get_failed_jobs(queue_name='default', limit=50):
+    """
+    Get failed jobs from a queue
+    
+    Args:
+        queue_name: Name of the queue
+        limit: Maximum number of jobs to return
+    
+    Returns:
+        list of failed job info
+    """
+    try:
+        from rq.registry import FailedJobRegistry
+        registry = FailedJobRegistry(queue_name, connection=_redis_conn)
+        
+        failed_jobs = []
+        for job_id in registry.get_job_ids(limit):
+            job = Job.fetch(job_id, connection=_redis_conn)
+            failed_jobs.append({
+                'id': job.id,
+                'created_at': job.created_at.isoformat() if job.created_at else None,
+                'ended_at': job.ended_at.isoformat() if job.ended_at else None,
+                'error': str(job.exc_info) if job.exc_info else 'Unknown error',
+                'func_name': job.func_name
+            })
+        
+        return failed_jobs
+    except Exception as e:
+        logger.exception(f"Error getting failed jobs: {e}")
+        return []

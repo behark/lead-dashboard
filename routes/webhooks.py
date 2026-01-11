@@ -166,26 +166,27 @@ def twilio_webhook():
 @webhooks_bp.route('/twilio/status', methods=['POST'])
 def twilio_status_webhook():
     """
-    Handle Twilio status callbacks for message delivery tracking
-    This webhook receives status updates for both SMS and WhatsApp messages
+    Enhanced webhook for Twilio message status updates with comprehensive delivery tracking
     """
     try:
         from datetime import datetime, timezone
         from twilio.request_validator import RequestValidator
+        from sqlalchemy.exc import SQLAlchemyError
         
         # Get status information
         message_sid = request.form.get('MessageSid', '')
         message_status = request.form.get('MessageStatus', '')
         to_number = request.form.get('To', '')
         from_number = request.form.get('From', '')
+        error_code = request.form.get('ErrorCode', '')
+        error_message = request.form.get('ErrorMessage', '')
         
-        current_app.logger.info(f"Twilio status webhook: SID={message_sid}, Status={message_status}")
+        current_app.logger.info(f"Twilio status webhook: SID={message_sid}, Status={message_status}, ErrorCode={error_code}")
         
         # Optional: Verify webhook signature for security
         # validator = RequestValidator(current_app.config.get('TWILIO_AUTH_TOKEN'))
         # if not validator.validate(request.url, request.form, request.headers.get('X-Twilio-Signature', '')):
         #     current_app.logger.warning("Invalid Twilio webhook signature")
-        #     return jsonify({'error': 'Invalid signature'}), 403
         
         if not message_sid:
             return jsonify({'error': 'Missing MessageSid'}), 400
@@ -199,29 +200,67 @@ def twilio_status_webhook():
         
         # Update status based on Twilio status
         now = datetime.now(timezone.utc)
+        status_updated = False
         
         # Twilio status values: queued, sending, sent, delivered, undelivered, failed, received, read
         if message_status == 'delivered':
-            log.delivered_at = now
-            current_app.logger.info(f"Message {message_sid} delivered to lead {log.lead_id}")
+            if not log.delivered_at:  # Only set if not already set
+                log.delivered_at = now
+                status_updated = True
+                current_app.logger.info(f"Message {message_sid} delivered to lead {log.lead_id}")
+                
+                # Update lead status if this is the first delivered message
+                lead = db.session.get(Lead, log.lead_id)
+                if lead and lead.status == 'CONTACTED':
+                    lead.status = 'DELIVERED'
+                    
         elif message_status == 'read':
-            log.read_at = now
-            # Update template stats
-            if log.message_template_id:
-                from models import MessageTemplate
-                template = db.session.get(MessageTemplate, log.message_template_id)
-                if template:
-                    template.times_opened += 1
-            current_app.logger.info(f"Message {message_sid} read by lead {log.lead_id}")
-        elif message_status == 'failed' or message_status == 'undelivered':
-            # Log failure but don't update delivered_at
-            current_app.logger.warning(f"Message {message_sid} failed/undelivered: {message_status}")
-            # Could add a failed_at field if needed
+            if not log.read_at:  # Only set if not already set
+                log.read_at = now
+                status_updated = True
+                
+                # Update template stats for open tracking
+                if log.message_template_id:
+                    template = db.session.get(MessageTemplate, log.message_template_id)
+                    if template:
+                        template.times_opened += 1
+                        
+                current_app.logger.info(f"Message {message_sid} read by lead {log.lead_id}")
+                
+        elif message_status in ['failed', 'undelivered']:
+            # Log detailed failure information
+            failure_info = {
+                'status': message_status,
+                'error_code': error_code,
+                'error_message': error_message,
+                'timestamp': now.isoformat()
+            }
+            
+            # Store failure info in log metadata (if you add a metadata JSON field)
+            log.status = message_status
+            status_updated = True
+            
+            current_app.logger.warning(f"Message {message_sid} {message_status}: {error_message} (Code: {error_code})")
+            
+            # Could trigger retry logic here for specific error codes
+            
+        elif message_status in ['queued', 'sending', 'sent']:
+            # Update intermediate status
+            log.status = message_status
+            status_updated = True
+            current_app.logger.debug(f"Message {message_sid} status updated to {message_status}")
         
-        db.session.commit()
+        # Commit status updates
+        if status_updated:
+            try:
+                db.session.commit()
+                current_app.logger.info(f"Updated message {message_sid} status to {message_status}")
+            except SQLAlchemyError as e:
+                current_app.logger.error(f"Database error updating message status: {e}")
+                db.session.rollback()
         
-        return jsonify({'status': 'ok'}), 200
-    
+        return jsonify({'status': 'ok', 'message': f'Status updated to {message_status}'}), 200
+        
     except Exception as e:
-        current_app.logger.error(f"Twilio status webhook error: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.exception(f"Error processing Twilio webhook: {e}")
+        return jsonify({'error': 'Internal server error'}), 500

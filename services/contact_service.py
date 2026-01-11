@@ -10,6 +10,8 @@ from requests.exceptions import RequestException
 import re
 import random
 import logging
+import time
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class ContactService:
     
     @staticmethod
     def send_whatsapp(lead, message, template_id=None, user_id=None, is_automated=False, ab_variant=None):
-        """Send WhatsApp message via Twilio"""
+        """Send WhatsApp message via Twilio with enhanced delivery tracking"""
         
         if not current_app.config.get('TWILIO_ACCOUNT_SID'):
             return {'success': False, 'error': 'Twilio API not configured'}
@@ -73,7 +75,7 @@ class ContactService:
             
             success = tw_message.sid is not None
             
-            # Log the contact
+            # Log the contact with enhanced tracking
             log = ContactLog(
                 lead_id=lead.id,
                 user_id=user_id,
@@ -82,7 +84,8 @@ class ContactService:
                 message_content=message,
                 is_automated=is_automated,
                 ab_variant=ab_variant,
-                twilio_message_sid=tw_message.sid if success else None  # Store SID for status tracking
+                twilio_message_sid=tw_message.sid if success else None,  # Store SID for status tracking
+                status='sent' if success else 'failed'  # Initial status for tracking
             )
             
             if success:
@@ -113,9 +116,12 @@ class ContactService:
             
             db.session.commit()
             
+            logger.info(f"WhatsApp message sent to {lead.name} (SID: {tw_message.sid})")
+            
             return {
                 'success': success,
-                'message_id': tw_message.sid,
+                'message_sid': tw_message.sid,
+                'status': 'sent' if success else 'failed',
                 'error': None if success else "Failed to get message SID"
             }
             
@@ -161,14 +167,14 @@ class ContactService:
                 server.login(current_app.config['MAIL_USERNAME'], current_app.config['MAIL_PASSWORD'])
                 server.sendmail(msg['From'], [lead.email], msg.as_string())
             
-            # Log the contact
+            # Log the contact with enhanced tracking
             log = ContactLog(
                 lead_id=lead.id,
                 user_id=user_id,
                 channel=ContactChannel.EMAIL,
                 message_template_id=template_id,
                 message_content=message,
-                delivered_at=datetime.now(timezone.utc),
+                delivered_at=datetime.now(timezone.utc),  # Email delivery is immediate
                 is_automated=is_automated,
                 ab_variant=ab_variant
             )
@@ -211,7 +217,7 @@ class ContactService:
     
     @staticmethod
     def send_sms(lead, message, template_id=None, user_id=None, is_automated=False, ab_variant=None):
-        """Send SMS via Twilio"""
+        """Send SMS via Twilio with enhanced delivery tracking"""
         
         if not current_app.config.get('TWILIO_ACCOUNT_SID'):
             return {'success': False, 'error': 'SMS not configured'}
@@ -220,10 +226,9 @@ class ContactService:
         if not phone:
             return {'success': False, 'error': 'No phone number'}
         
-        # Clean phone number
-        phone = re.sub(r'[^\d+]', '', phone)
-        if not phone.startswith('+'):
-            phone = '+383' + phone.lstrip('0')
+        # Format phone for international use
+        from services.phone_service import format_phone_international
+        formatted_phone = format_phone_international(phone, lead.country)
         
         try:
             from twilio.rest import Client
@@ -233,33 +238,39 @@ class ContactService:
                 current_app.config['TWILIO_AUTH_TOKEN']
             )
             
+            # Send SMS message
             tw_message = client.messages.create(
                 body=message,
-                from_=current_app.config['TWILIO_PHONE_NUMBER'],
-                to=phone
+                from_=current_app.config.get('TWILIO_PHONE_NUMBER', '+15017122661'),
+                to=formatted_phone
             )
             
-            # Log the contact
+            success = tw_message.sid is not None
+            
+            # Log the contact with enhanced tracking
             log = ContactLog(
                 lead_id=lead.id,
                 user_id=user_id,
                 channel=ContactChannel.SMS,
                 message_template_id=template_id,
                 message_content=message,
-                twilio_message_sid=tw_message.sid,  # Store SID for status tracking
+                twilio_message_sid=tw_message.sid if success else None,  # Store SID for status tracking
+                status='sent' if success else 'failed',  # Initial status for tracking
                 is_automated=is_automated,
                 ab_variant=ab_variant
             )
-            # Don't set delivered_at immediately - wait for webhook
             
-            lead.last_contacted = datetime.now(timezone.utc)
-            if lead.status == LeadStatus.NEW:
-                lead.status = LeadStatus.CONTACTED
-            
-            if template_id:
-                template = db.session.get(MessageTemplate, template_id)
-                if template:
-                    template.times_sent += 1
+            if success:
+                # Update lead information
+                lead.last_contacted = datetime.now(timezone.utc)
+                if lead.status == LeadStatus.NEW:
+                    lead.status = LeadStatus.CONTACTED
+                
+                # Update template statistics
+                if template_id:
+                    template = db.session.get(MessageTemplate, template_id)
+                    if template:
+                        template.times_sent += 1
             
             db.session.add(log)
             
@@ -276,7 +287,14 @@ class ContactService:
             
             db.session.commit()
             
-            return {'success': True, 'message_sid': tw_message.sid}
+            logger.info(f"SMS message sent to {lead.name} (SID: {tw_message.sid})")
+            
+            return {
+                'success': success,
+                'message_sid': tw_message.sid,
+                'status': 'sent' if success else 'failed',
+                'error': None if success else "Failed to get message SID"
+            }
             
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -286,11 +304,19 @@ class ContactService:
             logger.exception("API error sending SMS")
             return {'success': False, 'error': 'API error: ' + str(e)}
         except Exception as e:
+            logger.exception("Unexpected error sending SMS")
             return {'success': False, 'error': str(e)}
+    
+    @staticmethod
+    def select_template_variant_cached(base_template_name, channel, cache_timestamp=None):
+        """Cached version of template variant selection with performance tracking"""
+        return ContactService.select_template_variant(base_template_name, channel)
     
     @staticmethod
     def select_template_variant(base_template_name, channel):
         """Select the best performing variant of a template using A/B testing"""
+        start_time = time.time()
+        
         # Get all variants of this template
         variants = MessageTemplate.query.filter(
             MessageTemplate.name.like(f"{base_template_name}%"),
@@ -299,10 +325,12 @@ class ContactService:
         ).all()
 
         if not variants:
+            logger.debug(f"No variants found for template '{base_template_name}' on {channel}")
             return None
 
         # If only one variant, return it
         if len(variants) == 1:
+            logger.debug(f"Single variant found for '{base_template_name}': {variants[0].name}")
             return variants[0]
 
         # Calculate performance score for each variant
@@ -324,33 +352,67 @@ class ContactService:
                 confidence_adjustment = min(sample_size / 50, 1)  # Full confidence at 50 samples
 
                 score = expected_rate * confidence_adjustment
+                
+                # Log performance data
+                logger.debug(f"Variant '{variant.name}': {response_rate:.2%} response rate, "
+                           f"{sample_size} sends, score: {score:.3f}")
             else:
                 score = 0.5  # Default for new variants
+                logger.debug(f"New variant '{variant.name}': default score {score}")
 
             variant_scores.append((variant, score))
 
         # Sort by score descending and return best
         variant_scores.sort(key=lambda x: x[1], reverse=True)
-        return variant_scores[0][0]
+        best_variant = variant_scores[0][0]
+        
+        # Performance tracking
+        selection_time = time.time() - start_time
+        logger.info(f"Template variant selection for '{base_template_name}' completed in {selection_time:.3f}s. "
+                   f"Selected '{best_variant.name}' with score {variant_scores[0][1]:.3f}")
+        
+        return best_variant
 
     @staticmethod
-    def get_personalized_template(template, lead):
-        """Get personalized template using AI or fallback to basic personalization"""
+    def get_personalized_template(template, lead, timeout_seconds=10):
+        """Get personalized template using AI with timeout and fallback handling"""
         from services.ai_service import ai_service
-
-        # Try AI personalization first
-        ai_message = ai_service.generate_message_variation(
-            template.content,
-            {
-                'name': lead.name,
-                'city': lead.city,
-                'rating': lead.rating,
-                'category': lead.category
-            }
-        )
-
-        if ai_message:
-            # Update template content for this send
+        import concurrent.futures
+        import threading
+        
+        # Try AI personalization first with timeout
+        ai_message = None
+        ai_error = None
+        
+        try:
+            # Use ThreadPoolExecutor for timeout handling
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    ai_service.generate_message_variation,
+                    template.content,
+                    {
+                        'name': lead.name,
+                        'city': lead.city,
+                        'rating': lead.rating,
+                        'category': lead.category
+                    }
+                )
+                
+                try:
+                    ai_message = future.result(timeout=timeout_seconds)
+                    logger.info(f"AI personalization completed for lead {lead.name}")
+                except concurrent.futures.TimeoutError:
+                    logger.warning(f"AI personalization timed out for lead {lead.name} after {timeout_seconds}s")
+                    ai_error = "AI service timeout"
+                    future.cancel()
+                
+        except Exception as e:
+            logger.exception(f"AI personalization failed for lead {lead.name}: {e}")
+            ai_error = str(e)
+        
+        # Create personalized template
+        if ai_message and len(ai_message.strip()) > 10:
+            # AI succeeded - create personalized template
             personalized_template = MessageTemplate(
                 name=template.name,
                 channel=template.channel,
@@ -358,12 +420,14 @@ class ContactService:
                 content=ai_message,
                 variant=template.variant
             )
+            logger.info(f"Using AI-generated message for lead {lead.name}")
             return personalized_template
-
-        # Fallback to basic personalization
-        personalized_content = ContactService.personalize_message(template.content, lead)
-        template.content = personalized_content
-        return template
+        else:
+            # AI failed - use basic personalization fallback
+            logger.info(f"Using fallback personalization for lead {lead.name} (AI error: {ai_error})")
+            personalized_content = ContactService.personalize_message(template.content, lead)
+            template.content = personalized_content
+            return template
 
     @staticmethod
     def detect_opt_out(response_content):
