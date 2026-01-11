@@ -1,6 +1,10 @@
 # Lead Dashboard CRM
 
-A comprehensive lead management system with multi-channel outreach, automated sequences, and analytics.
+A comprehensive, production-ready lead management system with multi-channel outreach, automated sequences, analytics, and enterprise-grade features.
+
+[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
+[![Flask](https://img.shields.io/badge/Flask-2.0+-green.svg)](https://flask.palletsprojects.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Features
 
@@ -167,6 +171,52 @@ Create automated outreach campaigns:
 3. **Step 3** (Day 7): Final WhatsApp follow-up
 
 Sequences stop automatically when a lead responds.
+
+## Security Features
+
+- **Input Validation**: Comprehensive validation for all user inputs
+- **CSRF Protection**: Cross-site request forgery prevention
+- **Rate Limiting**: Per-user and per-IP rate limiting
+- **Account Lockout**: Automatic lockout after failed login attempts
+- **Password Requirements**: Strong password policy enforcement
+- **Audit Logging**: Track all user actions for compliance
+- **Webhook Signature Verification**: Secure webhook handling
+
+## Utility Modules
+
+The application includes several utility modules for common operations:
+
+- `utils/validators.py` - Input validation utilities
+- `utils/error_handlers.py` - Centralized error handling
+- `utils/security.py` - Security utilities and decorators
+- `utils/db_helpers.py` - Database query optimization
+- `utils/helpers.py` - General helper functions
+- `utils/cache.py` - Caching utilities
+- `utils/audit_logger.py` - Audit logging
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `SECRET_KEY` | Flask secret key | Yes (production) |
+| `DATABASE_URL` | Database connection string | No (defaults to SQLite) |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | For SMS/WhatsApp |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | For SMS/WhatsApp |
+| `TWILIO_PHONE_NUMBER` | Twilio Phone Number | For SMS |
+| `TWILIO_WHATSAPP_NUMBER` | WhatsApp Business Number | For WhatsApp |
+| `MAIL_SERVER` | SMTP Server | For Email |
+| `MAIL_USERNAME` | SMTP Username | For Email |
+| `MAIL_PASSWORD` | SMTP Password | For Email |
+| `REDIS_URL` | Redis connection URL | For caching/queues |
+| `SENTRY_DSN` | Sentry error tracking | Optional |
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 

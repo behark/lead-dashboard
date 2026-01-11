@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - Lead Dashboard{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="mb-4">
+                <i class="bi bi-exclamation-octagon text-danger" style="font-size: 5rem;"></i>
+            </div>
+            <h1 class="display-4 mb-3">500</h1>
+            <h2 class="h4 mb-4">Server Error</h2>
+            <p class="text-muted mb-4">
+                Something went wrong on our end. Please try again later or contact support if the problem persists.
+            </p>
+            <div class="d-flex justify-content-center gap-3">
+                <a href="{{ url_for('main.index') }}" class="btn btn-primary">
+                    <i class="bi bi-house"></i> Go to Dashboard
+                </a>
+                <button onclick="location.reload()" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise"></i> Try Again
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

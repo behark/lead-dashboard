@@ -901,10 +901,6 @@ def update_lead_status(lead_id):
         db.session.rollback()
         logger.exception("Error updating lead status")
         return jsonify({'success': False, 'error': 'Failed to update status'}), 500
-    except Exception as e:
-        logger.exception("Error updating lead status")
-        db.session.rollback()
-        return jsonify({'success': False, 'error': 'Failed to update status', 'message': str(e)}), 500
 
 
 @main_bp.route('/api/hot-leads')

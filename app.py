@@ -207,6 +207,10 @@ def create_app(config_name='default'):
         status_code = 200 if db_status == 'connected' else 503
         return jsonify(health_status), status_code
     
+    # Register error handlers
+    from utils.error_handlers import register_error_handlers
+    register_error_handlers(app)
+    
     # Create database tables
     with app.app_context():
         db.create_all()

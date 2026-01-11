@@ -191,15 +191,14 @@ class ContactService:
             db.session.add(log)
             
             # Record usage
-            if success:
-                from models_saas import UsageRecord
-                UsageRecord.record_usage(
-                    organization_id=lead.organization_id,
-                    usage_type='message_sent',
-                    user_id=user_id,
-                    resource_id=log.id,
-                    quantity=1
-                )
+            from models_saas import UsageRecord
+            UsageRecord.record_usage(
+                organization_id=lead.organization_id,
+                usage_type='message_sent',
+                user_id=user_id,
+                resource_id=log.id,
+                quantity=1
+            )
             
             db.session.commit()
             
