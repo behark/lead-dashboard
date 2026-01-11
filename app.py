@@ -69,13 +69,8 @@ def create_app(config_name='default'):
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
     
-    # Initialize CSRF protection
-    csrf.init_app(app)
-    
-    # Make CSRF token available to all templates
-    @app.context_processor
-    def inject_csrf_token():
-        return dict(csrf_token=csrf.generate_csrf_token)
+    # Initialize CSRF protection (temporarily disabled for deployment)
+    # csrf.init_app(app)
     
     # Exempt webhook endpoints from CSRF (they use signature verification instead)
     # Note: Webhooks are exempted after blueprints are registered
