@@ -150,12 +150,12 @@ if (document.readyState === 'loading') {
 }
 
 // Add animation CSS
-const style = document.createElement('style');
-style.textContent = `
+const swipeStyle = document.createElement('style');
+swipeStyle.textContent = `
     @keyframes fadeInOut {
         0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
         50% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
     }
 `;
-document.head.appendChild(style);
+document.head.appendChild(swipeStyle);

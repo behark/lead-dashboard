@@ -262,8 +262,8 @@ if ('PerformanceObserver' in window) {
 }
 
 // Add CSS for lazy loading animation
-const style = document.createElement('style');
-style.textContent = `
+const perfStyle = document.createElement('style');
+perfStyle.textContent = `
     .lead-card {
         opacity: 0;
         transform: translateY(20px);
@@ -286,4 +286,4 @@ style.textContent = `
         100% { background-position: -200% 0; }
     }
 `;
-document.head.appendChild(style);
+document.head.appendChild(perfStyle);
