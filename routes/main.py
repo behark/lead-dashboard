@@ -132,10 +132,57 @@ def quick_dashboard():
         leads = pagination.items
         
         # Simple stats (no complex queries)
+        total_leads = Lead.query.count()
+        new_leads = Lead.query.filter_by(status=LeadStatus.NEW).count()
+        contacted_leads = Lead.query.filter_by(status=LeadStatus.CONTACTED).count()
+        replied_leads = Lead.query.filter_by(status=LeadStatus.REPLIED).count()
+        closed_leads = Lead.query.filter_by(status=LeadStatus.CLOSED).count()
+        
+        # Hot & Untouched: HOT temperature + NEW status
+        hot_new = Lead.query.filter(
+            Lead.temperature == LeadTemperature.HOT,
+            Lead.status == LeadStatus.NEW
+        ).count()
+        
+        # Follow-ups due: Has next_followup date <= today
+        today = datetime.now(timezone.utc).date()
+        followup_due = Lead.query.filter(
+            Lead.next_followup <= today,
+            Lead.status.in_([LeadStatus.CONTACTED, LeadStatus.REPLIED])
+        ).count()
+        
+        # Today's targets: Recently added (last 7 days)
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        today_targets = Lead.query.filter(Lead.created_at >= week_ago).count()
+        
+        # Calculate conversion rates
+        response_rate = (replied_leads / contacted_leads * 100) if contacted_leads > 0 else 0
+        close_rate = (closed_leads / total_leads * 100) if total_leads > 0 else 0
+        
+        # Recent activity: Contacts made in last 7 days
+        try:
+            from models import ContactLog
+            contacts_made = ContactLog.query.filter(
+                ContactLog.sent_at >= week_ago
+            ).count()
+        except Exception:
+            contacts_made = 0
+        
         stats = {
-            'total_leads': Lead.query.count(),
-            'new_leads': Lead.query.filter_by(status=LeadStatus.NEW).count(),
-            'contacted_leads': Lead.query.filter_by(status=LeadStatus.CONTACTED).count(),
+            'total': total_leads,
+            'total_leads': total_leads,
+            'new_leads': new_leads,
+            'contacted_leads': contacted_leads,
+            'hot_new': hot_new,
+            'followup_due': followup_due,
+            'today_targets': today_targets,
+            'conversion': {
+                'response_rate': round(response_rate, 1),
+                'close_rate': round(close_rate, 1)
+            },
+            'recent_activity': {
+                'contacts_made': contacts_made
+            }
         }
         
         # Get templates without caching
