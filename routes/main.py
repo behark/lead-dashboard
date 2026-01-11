@@ -101,73 +101,61 @@ def index():
 @login_required
 def quick_dashboard():
     """Simplified quick-access dashboard optimized for personal use"""
-    # Handle presets
-    preset = request.args.get('preset')
-    
-    query = Lead.query
-    
-    # Apply smart presets
-    if preset == 'hot':
-        # Hot & Untouched: HOT temperature + NEW status
-        query = query.filter(
-            Lead.temperature == LeadTemperature.HOT,
-            Lead.status == LeadStatus.NEW
+    try:
+        # Handle presets
+        preset = request.args.get('preset')
+        
+        query = Lead.query
+        
+        # Apply smart presets
+        if preset == 'hot':
+            # Hot & Untouched: HOT temperature + NEW status
+            query = query.filter(
+                Lead.temperature == LeadTemperature.HOT,
+                Lead.status == LeadStatus.NEW
+            )
+        elif preset == 'followup':
+            # Follow-ups due: Has next_followup date <= today
+            today = datetime.now(timezone.utc).date()
+            query = query.filter(
+                Lead.next_followup <= today,
+                Lead.status.in_([LeadStatus.CONTACTED, LeadStatus.REPLIED])
+            )
+        elif preset == 'new':
+            # Recently added: Last 7 days
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            query = query.filter(Lead.created_at >= week_ago)
+        
+        # Pagination
+        page = request.args.get('page', 1, type=int)
+        pagination = query.order_by(Lead.created_at.desc()).paginate(page=page, per_page=LEADS_PER_PAGE, error_out=False)
+        leads = pagination.items
+        
+        # Simple stats (no complex queries)
+        stats = {
+            'total_leads': Lead.query.count(),
+            'new_leads': Lead.query.filter_by(status=LeadStatus.NEW).count(),
+            'contacted_leads': Lead.query.filter_by(status=LeadStatus.CONTACTED).count(),
+        }
+        
+        # Get templates without caching
+        try:
+            templates = MessageTemplate.query.filter_by(is_active=True).all()
+        except Exception:
+            templates = []
+        
+        return render_template(
+            'quick_dashboard.html',
+            leads=leads,
+            pagination=pagination,
+            stats=stats,
+            templates=templates
         )
-    elif preset == 'followup':
-        # Follow-ups due: Has next_followup date <= today
-        today = datetime.now(timezone.utc).date()
-        query = query.filter(
-            Lead.next_followup.isnot(None),
-            Lead.next_followup <= today
-        )
-    elif preset == 'today':
-        # Today's targets: NEW or CONTACTED, sorted by score
-        query = query.filter(
-            Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED])
-        )
-    
-    # Default sort: highest score first
-    query = query.order_by(Lead.lead_score.desc())
-    
-    # Optimize query
-    if joinedload:
-        query = query.options(joinedload(Lead.assigned_user))
-    
-    # Pagination (smaller page size for quick view)
-    page = request.args.get('page', 1, type=int)
-    per_page = 15  # Smaller for faster loading
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    leads = pagination.items
-    
-    # Get enhanced stats
-    stats = AnalyticsService.get_dashboard_stats()
-    
-    # Add quick stats for presets
-    stats['hot_new'] = Lead.query.filter(
-        Lead.temperature == LeadTemperature.HOT,
-        Lead.status == LeadStatus.NEW
-    ).count()
-    
-    today = datetime.now(timezone.utc).date()
-    stats['followup_due'] = Lead.query.filter(
-        Lead.next_followup.isnot(None),
-        Lead.next_followup <= today
-    ).count()
-    
-    stats['today_targets'] = Lead.query.filter(
-        Lead.status.in_([LeadStatus.NEW, LeadStatus.CONTACTED])
-    ).count()
-    
-    # Get templates for quick actions
-    templates = get_cached_templates()
-    
-    return render_template(
-        'quick_dashboard.html',
-        leads=leads,
-        pagination=pagination,
-        stats=stats,
-        templates=templates
-    )
+        
+    except Exception as e:
+        logger.exception(f"Error in quick_dashboard: {e}")
+        flash('Error loading dashboard. Please try again.', 'danger')
+        return redirect(url_for('auth.login'))
 
 
 def full_dashboard():
