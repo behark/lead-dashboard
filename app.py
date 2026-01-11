@@ -51,6 +51,16 @@ def create_app(config_name='default'):
     log_level = os.getenv('LOG_LEVEL', 'INFO' if not app.config.get('DEBUG', False) else 'DEBUG')
     setup_logging(app, log_level=log_level)
     
+    # Add template global for safe URL building
+    @app.template_global()
+    def safe_url_for(endpoint, default='#', **values):
+        """Safely build URL, returning default if endpoint doesn't exist"""
+        try:
+            from flask import url_for
+            return url_for(endpoint, **values)
+        except Exception:
+            return default
+    
     # Validate environment variables
     from utils.env_validator import validate_on_startup
     validate_on_startup(app)

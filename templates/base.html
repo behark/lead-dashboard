@@ -245,7 +245,7 @@
                         <i class="bi bi-people"></i> Team
                     </a>
                     {% endif %}
-                    <a class="nav-link {% if 'gdpr' in request.endpoint %}active{% endif %}" href="{{ url_for('gdpr.gdpr_dashboard') }}">
+                    <a class="nav-link {% if 'gdpr' in request.endpoint %}active{% endif %}" href="{{ safe_url_for('gdpr.gdpr_dashboard', default='/gdpr/') }}">
                         <i class="bi bi-shield-check"></i> GDPR
                     </a>
                     <a class="nav-link {% if 'analytics' in request.endpoint %}active{% endif %}" href="{{ url_for('analytics.dashboard') }}">
