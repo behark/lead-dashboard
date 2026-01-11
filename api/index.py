@@ -69,6 +69,16 @@ def create_app():
         )
         app.logger = logging.getLogger(__name__)
     
+    # Add template global for safe URL building
+    @app.template_global()
+    def safe_url_for(endpoint, default='#', **values):
+        """Safely build URL, returning default if endpoint doesn't exist"""
+        try:
+            from flask import url_for
+            return url_for(endpoint, **values)
+        except Exception:
+            return default
+    
     # Skip cache and rate limiter in serverless (not needed)
     # These features require persistent storage which serverless doesn't provide
     
