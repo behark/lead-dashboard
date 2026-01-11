@@ -72,6 +72,11 @@ def create_app(config_name='default'):
     # Initialize CSRF protection
     csrf.init_app(app)
     
+    # Make CSRF token available to all templates
+    @app.context_processor
+    def inject_csrf_token():
+        return dict(csrf_token=csrf.generate_csrf_token)
+    
     # Exempt webhook endpoints from CSRF (they use signature verification instead)
     # Note: Webhooks are exempted after blueprints are registered
     
@@ -105,7 +110,6 @@ def create_app(config_name='default'):
                 key_func=get_user_id,  # Per-user rate limiting
                 default_limits=["200 per day", "50 per hour"],
                 storage_uri=redis_url,
-                per_method=True,
                 headers_enabled=True
             )
         else:
@@ -116,7 +120,6 @@ def create_app(config_name='default'):
                 app=app,
                 key_func=get_user_id,  # Per-user rate limiting
                 default_limits=["200 per day", "50 per hour"],
-                per_method=True,
                 headers_enabled=True
             )
         
