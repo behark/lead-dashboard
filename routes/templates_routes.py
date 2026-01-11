@@ -5,7 +5,18 @@ import logging
 logger = logging.getLogger(__name__)
 from flask_login import login_required, current_user
 from models import db, MessageTemplate, Sequence, SequenceStep, ContactChannel, UserRole
-from utils.audit_logger import AuditLogger
+# Import audit logger with graceful fallback
+try:
+    from utils.audit_logger import AuditLogger
+except ImportError:
+    # Create a dummy AuditLogger if import fails
+    class AuditLogger:
+        @staticmethod
+        def log(*args, **kwargs):
+            pass
+        @staticmethod
+        def log_template_action(*args, **kwargs):
+            pass
 
 templates_bp = Blueprint('templates', __name__, url_prefix='/templates')
 

@@ -64,12 +64,12 @@ class EnvValidator:
         return validated
     
     @staticmethod
-    def validate_config(config_class) -> List[str]:
+    def validate_config(config_obj) -> List[str]:
         """
         Validate Flask app configuration
         
         Args:
-            config_class: Configuration class to validate
+            config_obj: Configuration object (app.config) to validate
         
         Returns:
             List of warnings (missing optional configs)
@@ -77,14 +77,14 @@ class EnvValidator:
         warnings = []
         
         # Check for critical configs
-        if not hasattr(config_class, 'SECRET_KEY') or not config_class.SECRET_KEY:
+        if not config_obj.get('SECRET_KEY'):
             warnings.append("SECRET_KEY is not set - using default (not secure for production)")
         
-        if hasattr(config_class, 'DEBUG') and config_class.DEBUG and os.getenv('FLASK_ENV') == 'production':
+        if config_obj.get('DEBUG') and os.getenv('FLASK_ENV') == 'production':
             warnings.append("DEBUG is True in production environment - security risk!")
         
         # Check database
-        db_uri = getattr(config_class, 'SQLALCHEMY_DATABASE_URI', '')
+        db_uri = config_obj.get('SQLALCHEMY_DATABASE_URI', '')
         if 'sqlite' in db_uri.lower() and os.getenv('FLASK_ENV') == 'production':
             warnings.append("SQLite database in production - consider PostgreSQL for scale")
         

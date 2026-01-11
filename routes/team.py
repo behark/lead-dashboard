@@ -336,6 +336,10 @@ def transfer_ownership(member_id):
     try:
         db.session.commit()
         return jsonify({'success': True, 'message': 'Ownership transferred successfully'})
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        logger.exception("Error transferring ownership")
+        return jsonify({'success': False, 'error': 'Failed to transfer ownership'}), 500
 
 
 @team_bp.route('/leave', methods=['POST'])

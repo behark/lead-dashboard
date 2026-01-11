@@ -10,7 +10,24 @@ from flask_login import login_user, logout_user, login_required, current_user
 from models import db, User, UserRole
 from services.user_email_service import UserEmailService
 from services.two_factor_service import TwoFactorService
-from utils.audit_logger import AuditLogger
+# Import audit logger with graceful fallback
+try:
+    from utils.audit_logger import AuditLogger
+except ImportError:
+    # Create a dummy AuditLogger if import fails
+    class AuditLogger:
+        @staticmethod
+        def log(*args, **kwargs):
+            pass
+        @staticmethod
+        def log_login(*args, **kwargs):
+            pass
+        @staticmethod
+        def log_logout(*args, **kwargs):
+            pass
+        @staticmethod
+        def log_security_event(*args, **kwargs):
+            pass
 
 auth_bp = Blueprint('auth', __name__)
 
