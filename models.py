@@ -556,3 +556,27 @@ class BulkJob(db.Model):
     
     def __repr__(self):
         return f'<BulkJob {self.job_type} {self.status}>'
+
+
+class AuditLog(db.Model):
+    """Audit log entry for tracking important user actions"""
+    __tablename__ = 'audit_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
+    organization_id = db.Column(db.Integer, db.ForeignKey('organizations.id'), index=True)
+    
+    action = db.Column(db.String(100), nullable=False, index=True)
+    resource_type = db.Column(db.String(50), index=True)
+    resource_id = db.Column(db.Integer)
+    
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(255))
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    
+    status = db.Column(db.String(20), default='success')
+    error_message = db.Column(db.Text)
+    details = db.Column(db.Text)  # JSON string
+    
+    def __repr__(self):
+        return f'<AuditLog {self.action} user_id={self.user_id}>'

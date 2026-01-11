@@ -3,12 +3,21 @@ Audit Logging Utility
 Tracks important user actions for compliance and security
 """
 from flask import request, current_app, has_request_context
-from models import db, AuditLog
 from datetime import datetime, timezone
 import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Try to import AuditLog, but handle gracefully if it doesn't exist
+try:
+    from models import db, AuditLog
+    AUDIT_LOG_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"AuditLog model not available: {e}. Audit logging will be disabled.")
+    AUDIT_LOG_AVAILABLE = False
+    db = None
+    AuditLog = None
 
 
 class AuditLogger:
@@ -30,6 +39,11 @@ class AuditLogger:
             details: Additional context (dict will be JSON-encoded)
             organization_id: Organization ID if applicable
         """
+        # Skip audit logging if AuditLog model is not available
+        if not AUDIT_LOG_AVAILABLE or AuditLog is None:
+            logger.debug(f"Audit logging skipped (model not available): {action}")
+            return
+        
         try:
             # Get request context if available
             ip_address = None
@@ -71,7 +85,8 @@ class AuditLogger:
             # Don't fail the main operation if audit logging fails
             logger.exception(f"Error creating audit log: {e}")
             try:
-                db.session.rollback()
+                if db:
+                    db.session.rollback()
             except Exception:
                 pass
     
