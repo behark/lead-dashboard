@@ -24,7 +24,7 @@ except ImportError:
     # Fallback for older SQLAlchemy versions
     joinedload = None
     selectinload = None
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import Counter
 from typing import List, Dict, Any, Optional
 import json
