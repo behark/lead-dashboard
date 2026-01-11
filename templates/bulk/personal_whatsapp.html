@@ -16,6 +16,17 @@
             <div class="alert alert-info">
                 <i class="bi bi-info-circle"></i>
                 <strong>How it works:</strong> This will open WhatsApp Web links in sequence. Make sure you're logged into WhatsApp Web in your browser.
+                <ul class="mb-0 mt-2">
+                    <li>Click "Start Sending" to begin opening WhatsApp chats automatically</li>
+                    <li>Each chat opens with your pre-written message ready to send</li>
+                    <li>Click "Send" in WhatsApp to deliver the message</li>
+                    <li>Messages are tracked in your dashboard when marked as sent</li>
+                </ul>
+            </div>
+            
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i>
+                <strong>Tip:</strong> If popups are blocked, allow popups for this site in your browser settings. Use the "Sequential" mode for best results.
             </div>
 
             <div class="card mb-4">
@@ -204,6 +215,16 @@ function markAsSent(leadId) {
         }
     }
     updateCounters();
+    
+    // Record in database
+    fetch('/api/mark-whatsapp-sent', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ lead_id: leadId })
+    }).catch(err => console.error('Error recording send:', err));
 }
 
 function updateCounters() {

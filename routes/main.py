@@ -1073,6 +1073,49 @@ def send_message_api():
         return jsonify({'success': False, 'error': 'Internal server error', 'message': str(e)}), 500
 
 
+@main_bp.route('/api/mark-whatsapp-sent', methods=['POST'])
+@login_required
+def mark_whatsapp_sent():
+    """Record that a WhatsApp message was sent via personal WhatsApp"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        lead_id = data.get('lead_id')
+        if not lead_id:
+            return jsonify({'success': False, 'error': 'lead_id is required'}), 400
+        
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({'success': False, 'error': 'Lead not found'}), 404
+        
+        # Create contact log for the personal WhatsApp send
+        log = ContactLog(
+            lead_id=lead.id,
+            user_id=current_user.id,
+            channel=ContactChannel.WHATSAPP,
+            message_content='[Sent via Personal WhatsApp]',
+            status='sent',
+            is_automated=False
+        )
+        
+        # Update lead status
+        lead.last_contacted = datetime.now(timezone.utc)
+        if lead.status == LeadStatus.NEW:
+            lead.status = LeadStatus.CONTACTED
+        
+        db.session.add(log)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Contact recorded'})
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error marking WhatsApp sent")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @main_bp.route('/test-buttons')
 @login_required
 def test_buttons():

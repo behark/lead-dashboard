@@ -331,87 +331,143 @@ def register_cli(app):
         from models import MessageTemplate, ContactChannel
         
         templates = [
+            # Professional Initial Contact Templates
             {
-                'name': 'Initial WhatsApp - Urgency Focus',
-                'channel': ContactChannel.WHATSAPP,
-                'language': 'sq',
-                'content': '''Pershendetje {business_name}! 👋
-
-Shoh që nuk keni uebsajt dhe humbisni klientë çdo ditë.
-
-Kam një ofertë speciale sot: uebsajt profesional për vetëm 299€ (zakonisht 499€).
-
-Interesuar për një takim 10-minutësh? Mund të fillojmë nesër!
-
-Shiko shembujt këtu: [link]''',
-                'variant': 'A'
-            },
-            {
-                'name': 'Initial WhatsApp - Social Proof',
-                'channel': ContactChannel.WHATSAPP,
-                'language': 'sq',
-                'content': '''Pershendetje {business_name}! 🙌
-
-3 biznese si juaji javën e kaluar morën uebsajt dhe thanë: "Pse nuk e bëra më herët?"
-
-Klientët ju gjejnë në Google, ju kontaktojnë 24/7, dhe ju merrni më shumë thirrje.
-
-Çmimi: 299€ për paketën bazike.
-
-Doni të shihni se si duket për biznesin tuaj?''',
-                'variant': 'B'
-            },
-            {
-                'name': 'Follow-up Day 1 - Value Reminder',
+                'name': 'Initial WhatsApp - Professional Introduction',
                 'channel': ContactChannel.WHATSAPP,
                 'language': 'sq',
                 'content': '''Përshëndetje {business_name}! 👋
 
-Vetëm po ju kujtoj për uebsajtin - klientët tuaj po kërkojnë në Google por nuk ju gjejnë.
+Jam nga Web Solutions Albania dhe e pashë biznesin tuaj në Google Maps - vlerësimi juaj {rating}⭐ tregon që ofroni shërbim të shkëlqyer!
 
-Oferta ime: uebsajt i gatshëm brenda 5 ditëve, me optimizim për Google.
+Kam vënë re që nuk keni ende një faqe interneti. Shumë klientë potencialë ju kërkojnë online para se të ju kontaktojnë.
 
-A keni 5 minuta për të folur sot?
+Ne ofrojmë:
+✅ Faqe profesionale me dizajn modern
+✅ Optimizim për Google (SEO)
+✅ Përshtatje për celular
+✅ Garanci 30-ditore
 
-[Link për shembuj]''',
-                'variant': 'A'
+A do të donit të shihni disa shembuj të punëve tona? Jam i disponueshëm për një bisedë të shkurtër.
+
+Me respekt,
+Web Solutions Albania''',
+                'variant': 'A',
+                'is_default': True
             },
             {
-                'name': 'Follow-up Day 3 - Scarcity',
+                'name': 'Initial WhatsApp - Value Focused',
+                'channel': ContactChannel.WHATSAPP,
+                'language': 'sq',
+                'content': '''Përshëndetje {business_name}! 🙌
+
+E vura re biznesin tuaj në {city} dhe më pëlqeu shumë shërbimi që ofroni.
+
+Sot, mbi 80% e klientëve kërkojnë online para se të zgjedhin një biznes. Pa një faqe interneti, mund të humbisni klientë të rinj.
+
+Ne kemi ndihmuar mbi 50 biznese si juaji të rrisin klientët e tyre nëpërmjet faqeve profesionale.
+
+Do të doja të ju ofroja një konsultim FALAS 15-minutësh për të diskutuar se si mund t'ju ndihmojmë.
+
+A keni kohë këtë javë?
+
+Me respekt,
+Web Solutions Albania''',
+                'variant': 'B',
+                'is_default': False
+            },
+            # Follow-up Templates
+            {
+                'name': 'Follow-up Day 2 - Gentle Reminder',
+                'channel': ContactChannel.WHATSAPP,
+                'language': 'sq',
+                'content': '''Përshëndetje përsëri {business_name}! 👋
+
+Vetëm po ju dërgoj një mesazh të shkurtër për t'ju kujtuar ofertën tonë për faqe interneti.
+
+Kuptoj që jeni të zënë me biznesin tuaj - por një investim i vogël në prezencën online mund të sjellë rezultate të mëdha.
+
+A do të donit të caktojmë një telefonatë 10-minutëshe kur t'ju përshtatet?
+
+Me respekt''',
+                'variant': 'A',
+                'is_default': False
+            },
+            {
+                'name': 'Follow-up Day 5 - Case Study',
                 'channel': ContactChannel.WHATSAPP,
                 'language': 'sq',
                 'content': '''Përshëndetje {business_name}!
 
-Oferta ime speciale mbaron sot - uebsajt për 299€ (nga 499€).
+Doja të ndaja një histori suksesi: Një biznes si juaji në {city} mori faqe interneti muajin e kaluar dhe tani merr 5+ klientë të rinj në javë vetëm nga kërkimet në Google.
 
-Kam vetëm 2 vende të lira këtë javë për projekte të reja.
+Nëse jeni ende të interesuar, jam gati t'ju tregoj se si mund të arrini të njëjtat rezultate.
 
-Interesuar? Mund të fillojmë menjëherë me logon dhe fotot tuaja.
+Shkruani "PO" dhe do t'ju dërgoj informacion të detajuar.
 
-Shkruani "PO" nëse doni të vazhdojmë! ✅''',
-                'variant': 'B'
+Faleminderit!''',
+                'variant': 'B',
+                'is_default': False
             },
+            # Email Templates
             {
-                'name': 'Initial Email - Albanian',
+                'name': 'Initial Email - Professional',
                 'channel': ContactChannel.EMAIL,
                 'language': 'sq',
-                'subject': 'Oferte per {business_name}',
-                'content': '''Pershendetje,
+                'subject': 'Ofertë Ekskluzive për {business_name} - Faqe Interneti Profesionale',
+                'content': '''Përshëndetje,
 
-Pashe biznesin tuaj {business_name} ne Google Maps dhe me pelqeu shume!
+Po ju kontaktoj nga Web Solutions Albania.
 
-Kam vene re qe nuk keni uebsajt. Deshironi te diskutojme se si nje uebsajt profesional mund te sillni me shume kliente?
+E pashë biznesin tuaj {business_name} në Google Maps dhe u impresionova nga vlerësimi juaj i lartë. Kjo tregon që ofroni shërbim cilësor!
 
-Ofrojme:
-- Dizajn modern dhe profesional
-- Optimizim per Google (SEO)
-- Forma kontakti per kliente te rinj
-- Garanci 30 ditesh
+Kam vënë re që ende nuk keni një faqe interneti. Në ditët e sotme, mbi 80% e klientëve kërkojnë online para se të marrin vendim. Pa prezencë online, mund të humbisni mundësi të rëndësishme.
 
-A mund te caktojme nje telefonat te shkurter?
+**Çfarë ofrojmë:**
+• Faqe profesionale me dizajn modern
+• Optimizim për motorët e kërkimit (SEO)
+• Përshtatje për pajisje mobile
+• Formular kontakti për klientë të rinj
+• Hosting dhe mirëmbajtje për 1 vit
+• Garanci 30-ditore kthimi të parave
 
-Me respekt''',
-                'variant': 'A'
+**Çmimet tona fillojnë nga 299€** për paketën bazike.
+
+A do të donit të caktojmë një telefonatë 15-minutëshe për të diskutuar nevojat tuaja? Jam i disponueshëm çdo ditë nga e hëna deri të premten.
+
+Me respekt,
+Web Solutions Albania
+📞 +355 XX XXX XXXX
+🌐 www.websolutions.al''',
+                'variant': 'A',
+                'is_default': True
+            },
+            # English Templates
+            {
+                'name': 'Initial WhatsApp - English Professional',
+                'channel': ContactChannel.WHATSAPP,
+                'language': 'en',
+                'content': '''Hello {business_name}! 👋
+
+I'm reaching out from Web Solutions. I came across your business on Google Maps and noticed your excellent {rating}⭐ rating!
+
+I see that you don't have a website yet. In today's digital world, over 80% of customers search online before choosing a business.
+
+We specialize in creating professional, mobile-friendly websites that help businesses like yours attract more customers.
+
+**What we offer:**
+✅ Modern, professional design
+✅ Google optimization (SEO)
+✅ Mobile-responsive layout
+✅ Contact forms & booking
+✅ 30-day money-back guarantee
+
+Would you be interested in a FREE 15-minute consultation to discuss how we can help your business grow?
+
+Best regards,
+Web Solutions Team''',
+                'variant': 'A',
+                'is_default': False
             }
         ]
         
