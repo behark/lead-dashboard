@@ -526,7 +526,7 @@ document.getElementById('bulkAction').addEventListener('change', function() {
     document.getElementById('sequenceSelect').classList.toggle('d-none', this.value !== 'enroll_sequence');
 });
 
-// Open WhatsApp for all selected leads using a single reusable tab
+// Open WhatsApp for all selected leads one by one
 let waTimers = [];
 let waSending = false;
 
@@ -549,7 +549,8 @@ function openSelectedWhatsApp() {
         return;
     }
 
-    if (!confirm(`Send WhatsApp to ${links.length} lead(s)?\n\nA single tab will cycle through each lead every 1.5 seconds, triggering your WhatsApp Desktop app.`)) return;
+    const DELAY = 3000; // 3 seconds between leads
+    if (!confirm(`Send WhatsApp to ${links.length} lead(s)?\n\nA tab will open each lead every ${DELAY/1000}s, triggering your WhatsApp Desktop app.`)) return;
 
     waSending = true;
     waTimers = [];
@@ -561,36 +562,46 @@ function openSelectedWhatsApp() {
     stopBtn.classList.remove('d-none');
     waBtn.disabled = true;
 
-    // Open first link in a named reusable window
-    const waWindow = window.open(links[0], 'wa_sender');
-    progressEl.textContent = `1 / ${links.length}`;
+    // Open a helper window from user gesture (won't be blocked)
+    let waWindow = window.open('about:blank', 'wa_sender');
 
-    // Navigate the same window to each subsequent link
-    for (let i = 1; i < links.length; i++) {
-        const timer = setTimeout(() => {
-            if (!waSending) return;
+    let idx = 0;
+
+    function sendNext() {
+        if (!waSending || idx >= links.length) {
+            finishWhatsApp(waWindow);
+            return;
+        }
+
+        progressEl.textContent = `${idx + 1} / ${links.length}`;
+
+        // Reset window to about:blank so the next wa.me is a fresh full page load
+        try { waWindow.location.href = 'about:blank'; } catch(e) {}
+
+        // After a short reset, navigate to the wa.me link
+        const navTimer = setTimeout(() => {
+            if (!waSending) { finishWhatsApp(waWindow); return; }
             try {
-                waWindow.location.href = links[i];
+                waWindow.location.href = links[idx];
             } catch(e) {
-                // Fallback if cross-origin blocks location change
-                window.open(links[i], 'wa_sender');
+                try { waWindow = window.open(links[idx], 'wa_sender'); } catch(e2) {}
             }
-            progressEl.textContent = `${i + 1} / ${links.length}`;
-
-            // Done - clean up after last one
-            if (i === links.length - 1) {
-                setTimeout(() => {
-                    finishWhatsApp(waWindow);
-                }, 2000);
+            idx++;
+            // Schedule next lead
+            if (idx < links.length) {
+                const nextTimer = setTimeout(sendNext, DELAY);
+                waTimers.push(nextTimer);
+            } else {
+                // Last one - finish after a delay
+                const doneTimer = setTimeout(() => finishWhatsApp(waWindow), DELAY);
+                waTimers.push(doneTimer);
             }
-        }, i * 1500);
-        waTimers.push(timer);
+        }, 400);
+        waTimers.push(navTimer);
     }
 
-    // If only 1 link, finish immediately
-    if (links.length === 1) {
-        setTimeout(() => finishWhatsApp(waWindow), 2000);
-    }
+    // Start sending
+    sendNext();
 }
 
 function stopWhatsApp() {
