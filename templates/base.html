@@ -219,42 +219,42 @@
                     <a class="nav-link" href="{{ url_for('main.index') }}?view=full">
                         <i class="bi bi-list-ul"></i> Full View
                     </a>
-                    <a class="nav-link {% if 'kanban' in request.endpoint %}active{% endif %}" href="{{ url_for('main.kanban_board') }}">
+                    <a class="nav-link {% if request.endpoint and 'kanban' in request.endpoint %}active{% endif %}" href="{{ url_for('main.kanban_board') }}">
                         <i class="bi bi-kanban"></i> Board
                     </a>
                     <hr class="border-secondary my-2">
                     <a class="nav-link {% if request.endpoint == 'bulk.smart_send' %}active{% endif %}" href="{{ url_for('bulk.smart_send') }}">
                         <i class="bi bi-send-check"></i> 🚀 Smart Bulk Send
                     </a>
-                    <a class="nav-link {% if 'bulk.followup' in request.endpoint %}active{% endif %}" href="{{ url_for('bulk.followup_queue') }}">
+                    <a class="nav-link {% if request.endpoint and 'bulk.followup' in request.endpoint %}active{% endif %}" href="{{ url_for('bulk.followup_queue') }}">
                         <i class="bi bi-clock-history"></i> Follow-ups
                     </a>
                     <hr class="border-secondary my-2">
                     {% if config.get('BILLING_ENABLED', False) %}
-                    <a class="nav-link {% if 'billing' in request.endpoint %}active{% endif %}" href="{{ url_for('billing.billing_dashboard') }}">
+                    <a class="nav-link {% if request.endpoint and 'billing' in request.endpoint %}active{% endif %}" href="{{ url_for('billing.billing_dashboard') }}">
                         <i class="bi bi-credit-card"></i> Billing
                     </a>
                     {% endif %}
                     {% if config.get('USAGE_ENABLED', False) %}
-                    <a class="nav-link {% if 'usage' in request.endpoint %}active{% endif %}" href="{{ url_for('usage.usage_dashboard') }}">
+                    <a class="nav-link {% if request.endpoint and 'usage' in request.endpoint %}active{% endif %}" href="{{ url_for('usage.usage_dashboard') }}">
                         <i class="bi bi-graph-up-arrow"></i> Usage
                     </a>
                     {% endif %}
                     {% if config.get('TEAM_ENABLED', False) %}
-                    <a class="nav-link {% if 'team' in request.endpoint %}active{% endif %}" href="{{ url_for('team.team_dashboard') }}">
+                    <a class="nav-link {% if request.endpoint and 'team' in request.endpoint %}active{% endif %}" href="{{ url_for('team.team_dashboard') }}">
                         <i class="bi bi-people"></i> Team
                     </a>
                     {% endif %}
-                    <a class="nav-link {% if 'gdpr' in request.endpoint %}active{% endif %}" href="{{ safe_url_for('gdpr.gdpr_dashboard', default='/gdpr/') }}">
+                    <a class="nav-link {% if request.endpoint and 'gdpr' in request.endpoint %}active{% endif %}" href="{{ safe_url_for('gdpr.gdpr_dashboard', default='/gdpr/') }}">
                         <i class="bi bi-shield-check"></i> GDPR
                     </a>
-                    <a class="nav-link {% if 'analytics' in request.endpoint %}active{% endif %}" href="{{ url_for('analytics.dashboard') }}">
+                    <a class="nav-link {% if request.endpoint and 'analytics' in request.endpoint %}active{% endif %}" href="{{ url_for('analytics.dashboard') }}">
                         <i class="bi bi-graph-up"></i> Analytics
                     </a>
-                    <a class="nav-link {% if 'templates.list' in request.endpoint %}active{% endif %}" href="{{ url_for('templates.list_templates') }}">
+                    <a class="nav-link {% if request.endpoint and 'templates.list' in request.endpoint %}active{% endif %}" href="{{ url_for('templates.list_templates') }}">
                         <i class="bi bi-chat-square-text"></i> Templates
                     </a>
-                    <a class="nav-link {% if 'templates.list_sequences' in request.endpoint %}active{% endif %}" href="{{ url_for('templates.list_sequences') }}">
+                    <a class="nav-link {% if request.endpoint and 'templates.list_sequences' in request.endpoint %}active{% endif %}" href="{{ url_for('templates.list_sequences') }}">
                         <i class="bi bi-diagram-3"></i> Sequences
                     </a>
                 </nav>
@@ -264,12 +264,20 @@
                     </button>
                     
                     <div class="text-white-50 small mb-2">
-                        <i class="bi bi-person-circle"></i> {{ current_user.username }}
+                        <i class="bi bi-person-circle"></i> {{ current_user.username if current_user.is_authenticated else 'Guest' }}
+                        {% if current_user.is_authenticated and current_user.role %}
                         <span class="badge bg-secondary">{{ current_user.role.value }}</span>
+                        {% endif %}
                     </div>
+                    {% if current_user.is_authenticated %}
                     <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm w-100">
                         <i class="bi bi-box-arrow-right"></i> Logout
                     </a>
+                    {% else %}
+                    <a href="{{ url_for('auth.login') }}" class="btn btn-outline-light btn-sm w-100">
+                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    </a>
+                    {% endif %}
                 </div>
             </div>
             

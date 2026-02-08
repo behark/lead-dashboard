@@ -104,7 +104,7 @@ def bulk_send_job(job_id, lead_ids, template_id, channel, user_id, dry_run=False
                 if template:
                     # Try to find the best variant
                     base_name = template.name.split(' - ')[0]  # Remove variant suffix
-                    best_variant = ContactService.select_template_variant(base_name, ContactChannel.WHATSAPP if channel == 'whatsapp' else ContactChannel.EMAIL if channel == 'email' else ContactChannel.SMS)
+                    best_variant = ContactService.select_template_variant(base_name, ContactChannel.WHATSAPP if channel == 'whatsapp' or channel == ContactChannel.WHATSAPP else ContactChannel.EMAIL if channel == 'email' or channel == ContactChannel.EMAIL else ContactChannel.SMS)
                     if best_variant:
                         selected_template = best_variant
                     
@@ -130,14 +130,14 @@ def bulk_send_job(job_id, lead_ids, template_id, channel, user_id, dry_run=False
                 
                 # Invoke Message Send [2f]
                 try:
-                    if channel == 'whatsapp':
+                    if channel == 'whatsapp' or channel == ContactChannel.WHATSAPP:
                         result = ContactService.send_whatsapp(
                             lead, message,
                             template_id=template_id_to_use,
                             user_id=user_id,
                             ab_variant=ab_variant
                         )
-                    elif channel == 'email':
+                    elif channel == 'email' or channel == ContactChannel.EMAIL:
                         result = ContactService.send_email(
                             lead, selected_template.subject if selected_template and hasattr(selected_template, 'subject') else "Hello from a business partner",
                             message,
@@ -145,7 +145,7 @@ def bulk_send_job(job_id, lead_ids, template_id, channel, user_id, dry_run=False
                             user_id=user_id,
                             ab_variant=ab_variant
                         )
-                    elif channel == 'sms':
+                    elif channel == 'sms' or channel == ContactChannel.SMS:
                         result = ContactService.send_sms(
                             lead, message,
                             template_id=template_id_to_use,
