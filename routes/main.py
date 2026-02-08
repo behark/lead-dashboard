@@ -872,7 +872,9 @@ def personal_whatsapp_bulk():
             message = lead.first_message
         else:
             # Use default professional template
-            message = f"Përshëndetje {lead.name}! 👋\n\nJam nga Web Solutions Albania dhe e pashë biznesin tuaj në Google Maps.\n\nKam vënë re që nuk keni ende një faqe interneti. A do të donit të diskutojmë se si mund t'ju ndihmojmë?\n\nMe respekt"
+            rating = lead.rating or 5.0
+            rating_str = f"{int(rating)}.0" if rating == int(rating) else f"{rating}"
+            message = f"Përshëndetje {lead.name}! ✂\n\nJam Behari, pashë që keni vlerësime super ({rating_str}!) në Google. Bravo për punën!\n\nKam përgatitur një ide se si mund t'i thjeshtoni rezervimet për klientët tuaj përmes një faqeje mobile që lidhet drejt me WhatsApp.\n\nA dëshironi t'ua dërgoj linkun ta shihni si mund të duket salloni juaj online? (Është dhuratë)."
         
         encoded_message = urllib.parse.quote(message)
         whatsapp_link = f"https://wa.me/{clean_phone}?text={encoded_message}"

@@ -19,14 +19,13 @@ def generate_new_message(lead):
     else:
         rating_str = f"{rating}"
 
-    message = f"""Përshëndetje {name}! 👋
+    message = f"""Përshëndetje {name}! ✂
 
-Jam Behari, pashë që keni vlerësime super ({rating_str}⭐) në Google. Bravo për punën!
+Jam Behari, pashë që keni vlerësime super ({rating_str}!) në Google. Bravo për punën!
 
-Kam përgatitur një ide se si mund t'i thjeshtoni rezervimet për klientët tuaj përmes një faqeje mobile që lidhet direkt me WhatsApp.
+Kam përgatitur një ide se si mund t'i thjeshtoni rezervimet për klientët tuaj përmes një faqeje mobile që lidhet drejt me WhatsApp.
 
-A dëshironi t'ua dërgoj linkun ta shihni si mund të duket salloni juaj online?
-(Është dhuratë - demo falas për t'ju treguar mundësitë)"""
+A dëshironi t'ua dërgoj linkun ta shihni si mund të duket salloni juaj online? (Është dhuratë)."""
 
     return message
 
