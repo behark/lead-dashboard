@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_login import LoginManager
 from flask_apscheduler import APScheduler
 from flask_wtf.csrf import CSRFProtect
@@ -79,8 +79,8 @@ def create_app(config_name='default'):
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
     
-    # Initialize CSRF protection (temporarily disabled for deployment)
-    # csrf.init_app(app)
+    # Initialize CSRF protection
+    csrf.init_app(app)
     
     # Exempt webhook endpoints from CSRF (they use signature verification instead)
     # Note: Webhooks are exempted after blueprints are registered
@@ -135,8 +135,8 @@ def create_app(config_name='default'):
                 # API endpoints: 100 requests per hour per user
                 try:
                     limiter.limit("100 per hour", key_func=get_user_id)(lambda: None)()
-                except Exception:
-                    pass  # Ignore if limiter not available
+                except Exception as e:
+                    app.logger.warning(f"Rate limiting failed: {e}")
     else:
         # Rate limiting disabled
         limiter = None
@@ -159,6 +159,8 @@ def create_app(config_name='default'):
     from routes.gdpr import gdpr_bp
     from routes.landing import landing_bp
     from routes.backup import backup_bp
+    from routes.demo_analytics_api import demo_analytics_bp
+    from routes.business_dashboard import business_dashboard_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
@@ -173,6 +175,8 @@ def create_app(config_name='default'):
     app.register_blueprint(gdpr_bp)
     app.register_blueprint(landing_bp)
     app.register_blueprint(backup_bp)
+    app.register_blueprint(demo_analytics_bp)
+    app.register_blueprint(business_dashboard_bp)
     
     # Exempt webhook endpoints from CSRF (they use signature verification instead)
     csrf.exempt(webhooks_bp)

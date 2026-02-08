@@ -131,34 +131,42 @@ def quick_dashboard():
         pagination = query.order_by(Lead.created_at.desc()).paginate(page=page, per_page=LEADS_PER_PAGE, error_out=False)
         leads = pagination.items
         
-        # Simple stats (no complex queries)
-        total_leads = Lead.query.count()
-        new_leads = Lead.query.filter_by(status=LeadStatus.NEW).count()
-        contacted_leads = Lead.query.filter_by(status=LeadStatus.CONTACTED).count()
-        replied_leads = Lead.query.filter_by(status=LeadStatus.REPLIED).count()
-        closed_leads = Lead.query.filter_by(status=LeadStatus.CLOSED).count()
-        
-        # Hot & Untouched: HOT temperature + NEW status
-        hot_new = Lead.query.filter(
-            Lead.temperature == LeadTemperature.HOT,
-            Lead.status == LeadStatus.NEW
-        ).count()
-        
-        # Follow-ups due: Has next_followup date <= today
+        # Optimized stats using single aggregated query (instead of 8+ separate queries)
+        from sqlalchemy import func, case
+
         today = datetime.now(timezone.utc).date()
-        followup_due = Lead.query.filter(
-            Lead.next_followup <= today,
-            Lead.status.in_([LeadStatus.CONTACTED, LeadStatus.REPLIED])
-        ).count()
-        
-        # Today's targets: Recently added (last 7 days)
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        today_targets = Lead.query.filter(Lead.created_at >= week_ago).count()
-        
+
+        # Single query for all lead stats
+        stats_query = db.session.query(
+            func.count(Lead.id).label('total'),
+            func.sum(case((Lead.status == LeadStatus.NEW, 1), else_=0)).label('new'),
+            func.sum(case((Lead.status == LeadStatus.CONTACTED, 1), else_=0)).label('contacted'),
+            func.sum(case((Lead.status == LeadStatus.REPLIED, 1), else_=0)).label('replied'),
+            func.sum(case((Lead.status == LeadStatus.CLOSED, 1), else_=0)).label('closed'),
+            func.sum(case((
+                (Lead.temperature == LeadTemperature.HOT) & (Lead.status == LeadStatus.NEW), 1
+            ), else_=0)).label('hot_new'),
+            func.sum(case((
+                (Lead.next_followup <= today) &
+                (Lead.status.in_([LeadStatus.CONTACTED, LeadStatus.REPLIED])), 1
+            ), else_=0)).label('followup_due'),
+            func.sum(case((Lead.created_at >= week_ago, 1), else_=0)).label('today_targets')
+        ).first()
+
+        total_leads = stats_query.total or 0
+        new_leads = stats_query.new or 0
+        contacted_leads = stats_query.contacted or 0
+        replied_leads = stats_query.replied or 0
+        closed_leads = stats_query.closed or 0
+        hot_new = stats_query.hot_new or 0
+        followup_due = stats_query.followup_due or 0
+        today_targets = stats_query.today_targets or 0
+
         # Calculate conversion rates
         response_rate = (replied_leads / contacted_leads * 100) if contacted_leads > 0 else 0
         close_rate = (closed_leads / total_leads * 100) if total_leads > 0 else 0
-        
+
         # Recent activity: Contacts made in last 7 days
         try:
             from models import ContactLog

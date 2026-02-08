@@ -78,17 +78,35 @@ A jeni te interesuar per nje bisede 5-minuteshe?''',
             'channel': ContactChannel.WHATSAPP,
             'language': 'sq',
             'category': 'barber',
-            'content': '''Pershendetje 👋
+            'content': '''Përshëndetje {business_name}! 👋
 
-Pashe {business_name} ne Google - {rating}⭐, shkelqyeshem!
-Shume kliente te kenaqur 💈
+Pashë që keni vlerësime super ({rating}⭐) në Google. Bravo për punën!
 
-Pyetje: Sa telefonata rezervimi merrni pas orarit te punes?
+Kam përgatitur një ide se si mund t'i thjeshtoni rezervimet për klientët tuaj përmes një faqeje mobile që lidhet direkt me WhatsApp.
 
-Me nje sistem rezervimi online, klientet mund te rezervojne 24/7 - edhe ne mengjes.
-Barberet qe perdorin kete zakonisht marrin 15-20 rezervime me shume/muaj.
+A dëshironi t'ua dërgoj linkun ta shihni si mund të duket salloni juaj online?
+(Është dhuratë - demo falas për t'ju treguar mundësitë)''',
+            'variant': 'A'
+        },
+        {
+            'name': 'Barber - Demo Sent Follow-up (Albanian)',
+            'channel': ContactChannel.WHATSAPP,
+            'language': 'sq',
+            'category': 'barber',
+            'content': '''Ja linku: {demo_link}
 
-A do te flisnit 5 minuta?''',
+Kjo është vetëm një PREVIEW për t'ju treguar si do të duket.
+
+Për ta marrë këtë + domain + hosting + mbështetje:
+💰 Vetëm €299 (përfshirë 1 vit hosting)
+✅ Gati në 5-7 ditë
+✅ Garanci 30-ditëshe
+✅ Rezervime direkt në WhatsApp
+
+A dëshironi të bëjmë një thirrje 15-minutëshe për të diskutuar?
+
+Ose klikoni këtu për të rezervuar një takim FALAS:
+📅 https://calendly.com/beharkabashi/konsultim''',
             'variant': 'A'
         },
         

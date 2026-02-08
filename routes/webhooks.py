@@ -3,8 +3,55 @@ from models import db, Lead, ContactLog, ContactChannel
 from services.contact_service import ContactService
 import hmac
 import hashlib
+import logging
 
+logger = logging.getLogger(__name__)
 webhooks_bp = Blueprint('webhooks', __name__, url_prefix='/webhooks')
+
+
+def normalize_phone(phone):
+    """Normalize phone number to digits only, with country code"""
+    if not phone:
+        return None
+    # Remove all non-digit characters
+    digits = ''.join(c for c in phone if c.isdigit())
+    # Ensure Kosovo country code
+    if digits.startswith('383'):
+        return digits
+    elif digits.startswith('0') and len(digits) >= 9:
+        return '383' + digits[1:]
+    elif len(digits) == 9:
+        return '383' + digits
+    return digits
+
+
+def find_lead_by_phone(phone):
+    """Find lead by phone number with proper matching"""
+    if not phone:
+        return None
+
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return None
+
+    # Try exact match first (most reliable)
+    leads = Lead.query.filter(Lead.phone.isnot(None)).all()
+
+    for lead in leads:
+        lead_normalized = normalize_phone(lead.phone)
+        if lead_normalized and lead_normalized == normalized:
+            return lead
+
+    # Fallback: match if one contains the other (for partial matches)
+    # But require at least 9 matching digits
+    if len(normalized) >= 9:
+        suffix = normalized[-9:]
+        for lead in leads:
+            lead_normalized = normalize_phone(lead.phone)
+            if lead_normalized and suffix in lead_normalized:
+                return lead
+
+    return None
 
 
 @webhooks_bp.route('/whatsapp', methods=['GET', 'POST'])
@@ -35,10 +82,8 @@ def whatsapp_webhook():
                         phone = message.get('from')
                         text = message.get('text', {}).get('body', '')
                         
-                        # Find lead by phone
-                        lead = Lead.query.filter(
-                            Lead.phone.contains(phone[-9:])  # Match last 9 digits
-                        ).first()
+                        # Find lead by phone (using secure matching)
+                        lead = find_lead_by_phone(phone)
                         
                         if lead:
                             ContactService.record_response(
@@ -52,10 +97,8 @@ def whatsapp_webhook():
                         message_status = status.get('status')
                         recipient = status.get('recipient_id')
                         
-                        # Find lead
-                        lead = Lead.query.filter(
-                            Lead.phone.contains(recipient[-9:])
-                        ).first()
+                        # Find lead (using secure matching)
+                        lead = find_lead_by_phone(recipient)
                         
                         if lead:
                             log = ContactLog.query.filter_by(
@@ -138,11 +181,9 @@ def twilio_webhook():
         
         # Clean phone number
         phone = from_number.replace('+', '').replace(' ', '')
-        
-        # Find lead
-        lead = Lead.query.filter(
-            Lead.phone.contains(phone[-9:])
-        ).first()
+
+        # Find lead (using secure matching)
+        lead = find_lead_by_phone(phone)
         
         if lead:
             ContactService.record_response(
@@ -182,12 +223,16 @@ def twilio_status_webhook():
         error_message = request.form.get('ErrorMessage', '')
         
         current_app.logger.info(f"Twilio status webhook: SID={message_sid}, Status={message_status}, ErrorCode={error_code}")
-        
-        # Optional: Verify webhook signature for security
-        # validator = RequestValidator(current_app.config.get('TWILIO_AUTH_TOKEN'))
-        # if not validator.validate(request.url, request.form, request.headers.get('X-Twilio-Signature', '')):
-        #     current_app.logger.warning("Invalid Twilio webhook signature")
-        
+
+        # Verify webhook signature for security (if auth token is configured)
+        twilio_auth_token = current_app.config.get('TWILIO_AUTH_TOKEN')
+        if twilio_auth_token:
+            validator = RequestValidator(twilio_auth_token)
+            signature = request.headers.get('X-Twilio-Signature', '')
+            if not validator.validate(request.url, request.form, signature):
+                current_app.logger.warning("Invalid Twilio webhook signature - possible spoofing attempt")
+                return jsonify({'error': 'Invalid signature'}), 403
+
         if not message_sid:
             return jsonify({'error': 'Missing MessageSid'}), 400
         

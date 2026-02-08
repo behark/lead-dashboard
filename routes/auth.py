@@ -31,6 +31,11 @@ except ImportError:
 
 auth_bp = Blueprint('auth', __name__)
 
+# Rate limiting for login - 5 attempts per minute, 20 per hour
+def get_login_rate_limit_key():
+    """Get rate limit key based on IP address"""
+    return request.remote_addr or 'unknown'
+
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -83,10 +88,11 @@ def login():
             
             # Check if 2FA is enabled
             if user.two_factor_enabled:
-                # Store user ID in session for 2FA verification
+                # Store user ID in session for 2FA verification with 5-minute timeout
                 session['2fa_user_id'] = user.id
                 session['2fa_remember'] = remember
                 session['2fa_next'] = request.args.get('next')
+                session['2fa_expires'] = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
                 return redirect(url_for('auth.verify_2fa'))
             
             login_user(user, remember=remember)
@@ -438,11 +444,27 @@ def verify_2fa():
     """Verify 2FA token during login"""
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
-    
+
     user_id = session.get('2fa_user_id')
     if not user_id:
         flash('Please login first.', 'info')
         return redirect(url_for('auth.login'))
+
+    # Check if 2FA session has expired (5 minutes)
+    expires_str = session.get('2fa_expires')
+    if expires_str:
+        try:
+            expires = datetime.fromisoformat(expires_str)
+            if datetime.now(timezone.utc) > expires:
+                # Clear expired 2FA session
+                session.pop('2fa_user_id', None)
+                session.pop('2fa_remember', None)
+                session.pop('2fa_next', None)
+                session.pop('2fa_expires', None)
+                flash('2FA session expired. Please login again.', 'warning')
+                return redirect(url_for('auth.login'))
+        except (ValueError, TypeError):
+            pass  # If parsing fails, continue with verification
     
     user = db.session.get(User, user_id)
     if not user or not user.two_factor_enabled:
