@@ -229,8 +229,12 @@
             <!-- Populated dynamically -->
         </select>
         <button type="submit" class="btn btn-sm btn-outline-primary">Apply</button>
-        <button type="button" class="btn btn-sm btn-success" onclick="openSelectedWhatsApp()" title="Open WhatsApp for all selected leads">
+        <button type="button" class="btn btn-sm btn-success" id="waBtn" onclick="openSelectedWhatsApp()" title="Open WhatsApp for all selected leads">
             <i class="bi bi-whatsapp"></i> Open WhatsApp for Selected
+        </button>
+        <span id="waProgress" class="d-none ms-2 badge bg-success fs-6 align-middle"></span>
+        <button type="button" class="btn btn-sm btn-danger d-none ms-1" id="waStop" onclick="stopWhatsApp()">
+            <i class="bi bi-stop-fill"></i> Stop
         </button>
     </div>
 
@@ -522,37 +526,96 @@ document.getElementById('bulkAction').addEventListener('change', function() {
     document.getElementById('sequenceSelect').classList.toggle('d-none', this.value !== 'enroll_sequence');
 });
 
-// Open WhatsApp for all selected leads sequentially
+// Open WhatsApp for all selected leads using a single reusable tab
+let waTimers = [];
+let waSending = false;
+
 function openSelectedWhatsApp() {
     const checked = document.querySelectorAll('.lead-checkbox:checked');
     if (checked.length === 0) {
         alert('Please select at least one lead first.');
         return;
     }
-    
+
     const links = [];
     checked.forEach(cb => {
         const row = cb.closest('tr');
         const waLink = row.dataset.whatsapp;
         if (waLink) links.push(waLink);
     });
-    
+
     if (links.length === 0) {
         alert('None of the selected leads have a WhatsApp link.');
         return;
     }
-    
-    if (!confirm(`Open WhatsApp chat for ${links.length} lead(s)?\n\nNote: Your browser may block pop-ups. Please allow pop-ups for this site if prompted.`)) return;
-    
-    // Open first one immediately (won't be blocked)
-    window.open(links[0], '_blank');
-    
-    // Open remaining with delays so the user can handle each tab
+
+    if (!confirm(`Send WhatsApp to ${links.length} lead(s)?\n\nA single tab will cycle through each lead every 1.5 seconds, triggering your WhatsApp Desktop app.`)) return;
+
+    waSending = true;
+    waTimers = [];
+    const progressEl = document.getElementById('waProgress');
+    const stopBtn = document.getElementById('waStop');
+    const waBtn = document.getElementById('waBtn');
+
+    progressEl.classList.remove('d-none');
+    stopBtn.classList.remove('d-none');
+    waBtn.disabled = true;
+
+    // Open first link in a named reusable window
+    const waWindow = window.open(links[0], 'wa_sender');
+    progressEl.textContent = `1 / ${links.length}`;
+
+    // Navigate the same window to each subsequent link
     for (let i = 1; i < links.length; i++) {
-        setTimeout(() => {
-            window.open(links[i], '_blank');
+        const timer = setTimeout(() => {
+            if (!waSending) return;
+            try {
+                waWindow.location.href = links[i];
+            } catch(e) {
+                // Fallback if cross-origin blocks location change
+                window.open(links[i], 'wa_sender');
+            }
+            progressEl.textContent = `${i + 1} / ${links.length}`;
+
+            // Done - clean up after last one
+            if (i === links.length - 1) {
+                setTimeout(() => {
+                    finishWhatsApp(waWindow);
+                }, 2000);
+            }
         }, i * 1500);
+        waTimers.push(timer);
     }
+
+    // If only 1 link, finish immediately
+    if (links.length === 1) {
+        setTimeout(() => finishWhatsApp(waWindow), 2000);
+    }
+}
+
+function stopWhatsApp() {
+    waSending = false;
+    waTimers.forEach(t => clearTimeout(t));
+    waTimers = [];
+    finishWhatsApp(null);
+}
+
+function finishWhatsApp(waWindow) {
+    waSending = false;
+    const progressEl = document.getElementById('waProgress');
+    const stopBtn = document.getElementById('waStop');
+    const waBtn = document.getElementById('waBtn');
+
+    progressEl.textContent = 'Done!';
+    waBtn.disabled = false;
+    stopBtn.classList.add('d-none');
+
+    // Close the helper tab
+    if (waWindow) {
+        try { waWindow.close(); } catch(e) {}
+    }
+
+    setTimeout(() => progressEl.classList.add('d-none'), 3000);
 }
 
 // Hide lead from list
