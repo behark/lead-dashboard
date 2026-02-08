@@ -119,6 +119,9 @@ class Lead(db.Model):
     opt_out_reason = db.Column(db.String(200))
     opt_out_date = db.Column(db.DateTime)
     
+    # Visibility
+    is_hidden = db.Column(db.Boolean, default=False, index=True)
+    
     # Timestamps
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     last_contacted = db.Column(db.DateTime)

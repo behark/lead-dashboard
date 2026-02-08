@@ -361,14 +361,13 @@
                 <span class="badge bg-secondary">{{ lead.status.value }}</span>
             </div>
             <div class="quick-actions">
-                <button class="btn btn-success btn-sm" onclick="openWhatsApp({{ lead.id }}, '{{ lead.whatsapp_link }}', event)">
+                {% if lead.whatsapp_link %}
+                <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-success btn-sm" onclick="event.stopPropagation()">
                     <i class="bi bi-whatsapp"></i> WhatsApp
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="quickContact({{ lead.id }}, event)">
-                    <i class="bi bi-check"></i> Contacted
-                </button>
-                <button class="btn btn-outline-secondary btn-sm" onclick="viewDetails({{ lead.id }}, event)">
-                    <i class="bi bi-eye"></i>
+                </a>
+                {% endif %}
+                <button class="btn btn-outline-danger btn-sm" onclick="hideLead({{ lead.id }}, this, event)">
+                    <i class="bi bi-eye-slash"></i> Hide
                 </button>
             </div>
         </div>
@@ -416,15 +415,14 @@
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <button class="btn btn-success" onclick="openWhatsApp({{ lead.id }}, '{{ lead.whatsapp_link }}', event)">
+                                {% if lead.whatsapp_link %}
+                                <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-success" onclick="event.stopPropagation()">
                                     <i class="bi bi-whatsapp"></i>
-                                </button>
-                                <button class="btn btn-primary" onclick="quickContact({{ lead.id }}, event)">
-                                    <i class="bi bi-check"></i>
-                                </button>
-                                <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}" class="btn btn-outline-secondary">
-                                    <i class="bi bi-eye"></i>
                                 </a>
+                                {% endif %}
+                                <button class="btn btn-outline-danger" onclick="hideLead({{ lead.id }}, this, event)">
+                                    <i class="bi bi-eye-slash"></i>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -630,6 +628,33 @@ function quickContact(leadId, event) {
 function viewDetails(leadId, event) {
     event.stopPropagation();
     window.location.href = `/lead/${leadId}`;
+}
+
+function hideLead(leadId, btn, event) {
+    if (event) event.stopPropagation();
+    if (!confirm('Hide this lead from the list?')) return;
+    
+    const el = btn.closest('.lead-card') || btn.closest('tr');
+    
+    fetch(`/api/lead/${leadId}/hide`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            el.style.transition = 'opacity 0.3s ease';
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+            showNotification('Lead hidden from list', 'success');
+        } else {
+            showNotification('Failed to hide lead', 'danger');
+        }
+    })
+    .catch(() => showNotification('Error hiding lead', 'danger'));
 }
 
 // ===== LEAD SELECTION =====

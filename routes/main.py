@@ -105,7 +105,7 @@ def quick_dashboard():
         # Handle presets
         preset = request.args.get('preset')
         
-        query = Lead.query
+        query = Lead.query.filter(Lead.is_hidden == False)
         
         # Apply smart presets
         if preset == 'hot':
@@ -226,8 +226,11 @@ def full_dashboard():
     search_query = request.args.get('search', '').strip()
     assigned_filter = request.args.get('assigned')
     
-    # Build query
+    # Build query - exclude hidden leads by default
+    show_hidden = request.args.get('show_hidden') == '1'
     query = Lead.query
+    if not show_hidden:
+        query = query.filter(Lead.is_hidden == False)
     
     if temp_filter:
         try:
@@ -944,6 +947,27 @@ def get_leads_api():
     except Exception as e:
         logger.exception("Error fetching leads API")
         return jsonify({'error': 'Failed to fetch leads', 'message': str(e)}), 500
+
+
+@main_bp.route('/api/lead/<int:lead_id>/hide', methods=['POST'])
+@login_required
+def hide_lead(lead_id):
+    """Hide a lead from the dashboard list"""
+    try:
+        lead = db.session.get(Lead, lead_id)
+        if not lead:
+            return jsonify({'success': False, 'error': 'Lead not found'}), 404
+        
+        lead.is_hidden = True
+        db.session.commit()
+        
+        AuditLogger.log_lead_action('lead_hidden', lead_id, current_user.id)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logger.exception("Error hiding lead")
+        return jsonify({'success': False, 'error': 'Failed to hide lead'}), 500
 
 
 @main_bp.route('/api/lead/<int:lead_id>/status', methods=['POST'])

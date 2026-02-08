@@ -229,6 +229,9 @@
             <!-- Populated dynamically -->
         </select>
         <button type="submit" class="btn btn-sm btn-outline-primary">Apply</button>
+        <button type="button" class="btn btn-sm btn-success" onclick="openSelectedWhatsApp()" title="Open WhatsApp for all selected leads">
+            <i class="bi bi-whatsapp"></i> Open WhatsApp for Selected
+        </button>
     </div>
 
     <!-- Leads Table -->
@@ -251,7 +254,7 @@
                 </thead>
                 <tbody>
                 {% for lead in leads %}
-                <tr class="{% if lead.temperature.value == 'HOT' %}temp-hot{% elif lead.temperature.value == 'WARM' %}temp-warm{% else %}temp-cold{% endif %}">
+                <tr class="{% if lead.temperature.value == 'HOT' %}temp-hot{% elif lead.temperature.value == 'WARM' %}temp-warm{% else %}temp-cold{% endif %}" data-whatsapp="{{ lead.whatsapp_link or '' }}">
                     <td><input type="checkbox" name="lead_ids" value="{{ lead.id }}" class="lead-checkbox"></td>
                     <td>
                         <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}">
@@ -295,34 +298,14 @@
                     </td>
                     <td>
                         <div class="btn-group btn-group-sm">
-                            <!-- Enhanced WhatsApp with template selection -->
-                            <div class="dropdown">
-                                <button class="btn wa-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" title="Send via WhatsApp">
-                                    <i class="bi bi-whatsapp"></i> <i class="bi bi-chevron-down"></i>
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li><h6 class="dropdown-header">Select Template:</h6></li>
-                                    <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, null)">
-                                        <i class="bi bi-pencil"></i> Custom Message
-                                    </a></li>
-                                    {% if templates %}
-                                        {% for t in templates if t.channel.value == 'whatsapp' %}
-                                        <li><a class="dropdown-item" href="#" onclick="quickSendWhatsApp({{ lead.id }}, {{ t.id }})">
-                                            <i class="bi bi-file-text"></i> {{ t.name }}
-                                        </a></li>
-                                        {% endfor %}
-                                    {% endif %}
-                                </ul>
-                            </div>
-                            <!-- Original WhatsApp Web link -->
                             {% if lead.whatsapp_link %}
-                            <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-outline-success" title="Open WhatsApp Web">
-                                <i class="bi bi-box-arrow-up-right"></i>
+                            <a href="{{ lead.whatsapp_link }}" target="_blank" class="btn btn-success" title="Open WhatsApp Chat">
+                                <i class="bi bi-whatsapp"></i>
                             </a>
                             {% endif %}
-                            <a href="{{ url_for('main.lead_detail', lead_id=lead.id) }}" class="btn btn-outline-secondary" title="View">
-                                <i class="bi bi-eye"></i>
-                            </a>
+                            <button class="btn btn-outline-danger" onclick="hideLead({{ lead.id }}, this)" title="Hide Lead">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -539,32 +522,63 @@ document.getElementById('bulkAction').addEventListener('change', function() {
     document.getElementById('sequenceSelect').classList.toggle('d-none', this.value !== 'enroll_sequence');
 });
 
-// Quick WhatsApp send function
-function quickSendWhatsApp(leadId, templateId) {
-    if (templateId === null) {
-        window.location.href = `/lead/${leadId}#whatsapp-tab`;
-    } else {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/lead/${leadId}/contact`;
-        form.style.display = 'none';
-        
-        const channelInput = document.createElement('input');
-        channelInput.type = 'hidden';
-        channelInput.name = 'channel';
-        channelInput.value = 'whatsapp';
-        form.appendChild(channelInput);
-        
-        const templateInput = document.createElement('input');
-        templateInput.type = 'hidden';
-        templateInput.name = 'template_id';
-        templateInput.value = templateId;
-        form.appendChild(templateInput);
-        
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+// Open WhatsApp for all selected leads sequentially
+function openSelectedWhatsApp() {
+    const checked = document.querySelectorAll('.lead-checkbox:checked');
+    if (checked.length === 0) {
+        alert('Please select at least one lead first.');
+        return;
     }
+    
+    const links = [];
+    checked.forEach(cb => {
+        const row = cb.closest('tr');
+        const waLink = row.dataset.whatsapp;
+        if (waLink) links.push(waLink);
+    });
+    
+    if (links.length === 0) {
+        alert('None of the selected leads have a WhatsApp link.');
+        return;
+    }
+    
+    if (!confirm(`Open WhatsApp chat for ${links.length} lead(s)?\n\nNote: Your browser may block pop-ups. Please allow pop-ups for this site if prompted.`)) return;
+    
+    // Open first one immediately (won't be blocked)
+    window.open(links[0], '_blank');
+    
+    // Open remaining with delays so the user can handle each tab
+    for (let i = 1; i < links.length; i++) {
+        setTimeout(() => {
+            window.open(links[i], '_blank');
+        }, i * 1500);
+    }
+}
+
+// Hide lead from list
+function hideLead(leadId, btn) {
+    if (!confirm('Hide this lead from the list?')) return;
+    
+    const row = btn.closest('tr');
+    
+    fetch(`/api/lead/${leadId}/hide`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            row.style.transition = 'opacity 0.3s ease';
+            row.style.opacity = '0';
+            setTimeout(() => row.remove(), 300);
+        } else {
+            alert('Failed to hide lead.');
+        }
+    })
+    .catch(() => alert('Error hiding lead. Please try again.'));
 }
 </script>
 {% endblock %}
