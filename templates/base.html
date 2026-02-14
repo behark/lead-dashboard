@@ -203,6 +203,7 @@
         }
     </style>
     {% block extra_css %}{% endblock %}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body>
     <div class="container-fluid">
@@ -432,6 +433,23 @@
                 }
             }
         });
+    </script>
+    <script>
+    // Auto-inject CSRF token into all POST forms that don't already have one
+    document.addEventListener('DOMContentLoaded', function() {
+        var token = document.querySelector('meta[name="csrf-token"]');
+        if (token) {
+            document.querySelectorAll('form[method="POST"], form[method="post"]').forEach(function(form) {
+                if (!form.querySelector('input[name="csrf_token"]')) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'csrf_token';
+                    input.value = token.content;
+                    form.prepend(input);
+                }
+            });
+        }
+    });
     </script>
     {% block extra_js %}{% endblock %}
 </body>

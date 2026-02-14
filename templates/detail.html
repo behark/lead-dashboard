@@ -53,6 +53,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('main.update_lead', lead_id=lead.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label class="form-label">Status</label>
                         <select name="status" class="form-select">
@@ -98,10 +99,12 @@
                     <small>Step {{ lead.sequence_step }} of {{ lead.sequence.steps.count() }}</small>
                 </div>
                 <form method="POST" action="{{ url_for('main.enroll_sequence', lead_id=lead.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-danger btn-sm w-100">Remove from Sequence</button>
                 </form>
                 {% else %}
                 <form method="POST" action="{{ url_for('main.enroll_sequence', lead_id=lead.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <select name="sequence_id" class="form-select mb-2">
                         <option value="">Select a sequence...</option>
                         {% for seq in sequences %}
@@ -145,6 +148,7 @@
                     <!-- WhatsApp Tab -->
                     <div class="tab-pane fade show active" id="whatsapp-tab">
                         <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="channel" value="whatsapp">
                             <div class="mb-3">
                                 <label class="form-label">Template</label>
@@ -175,6 +179,7 @@
                     <!-- Email Tab -->
                     <div class="tab-pane fade" id="email-tab">
                         <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="channel" value="email">
                             <div class="mb-3">
                                 <label class="form-label">Template</label>
@@ -202,6 +207,7 @@
                     <!-- SMS Tab -->
                     <div class="tab-pane fade" id="sms-tab">
                         <form method="POST" action="{{ url_for('main.contact_lead', lead_id=lead.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="channel" value="sms">
                             <div class="mb-3">
                                 <label class="form-label">Message (160 chars)</label>
@@ -223,6 +229,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('main.record_response', lead_id=lead.id) }}" class="row g-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="col-md-3">
                         <select name="channel" class="form-select">
                             <option value="whatsapp">WhatsApp</option>

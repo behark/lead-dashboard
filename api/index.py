@@ -8,8 +8,10 @@ sys.path.insert(0, parent_dir)
 
 from flask import Flask
 from flask_login import LoginManager
+from flask_wtf.csrf import CSRFProtect
 
 login_manager = LoginManager()
+csrf = CSRFProtect()
 
 def create_app():
     app = Flask(__name__, 
@@ -44,11 +46,17 @@ def create_app():
     
     # Import models after config is set
     from models import db, User, Lead, LeadStatus, LeadTemperature, MessageTemplate, ContactChannel
-    
+    # Import SaaS models to ensure they're registered
+    try:
+        import models_saas
+    except ImportError:
+        pass
+
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = 'info'
+    csrf.init_app(app)
     
     @login_manager.user_loader
     def load_user(user_id):

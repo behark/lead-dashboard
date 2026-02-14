@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_login import login_required, current_user
-from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, ContactChannel, SavedFilter, BulkJob
+from models import db, Lead, LeadStatus, LeadTemperature, ContactLog, MessageTemplate, Sequence, User, UserRole, ContactChannel, SavedFilter, BulkJob
 from models_saas import UsageRecord
 from services.analytics_service import AnalyticsService
 # Import audit logger with graceful fallback
@@ -251,7 +251,16 @@ def full_dashboard():
         query = query.filter(Lead.country == country_filter)
     
     if search_query:
-        query = query.filter(Lead.name.ilike(f'%{search_query}%'))
+        search_term = f'%{search_query}%'
+        query = query.filter(
+            db.or_(
+                Lead.name.ilike(search_term),
+                Lead.phone.ilike(search_term),
+                Lead.city.ilike(search_term),
+                Lead.category.ilike(search_term),
+                Lead.email.ilike(search_term)
+            )
+        )
     
     if assigned_filter:
         if assigned_filter == 'unassigned':
@@ -315,6 +324,7 @@ def full_dashboard():
             'country': country_filter,
             'sort': sort_by,
             'assigned': assigned_filter,
+            'search': search_query,
         },
         templates=get_cached_templates()
     )
@@ -727,7 +737,7 @@ def get_job_status(job_id):
         abort(404)
     
     # Check authorization
-    if job.user_id != current_user.id and not current_user.is_admin:
+    if job.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         return jsonify({'error': 'Unauthorized'}), 403
     
     # Get detailed status
@@ -981,7 +991,7 @@ def update_lead_status(lead_id):
         if not lead:
             return jsonify({'success': False, 'error': 'Lead not found'}), 404
         
-        if lead.assigned_to != current_user.id and current_user.role != 'admin':
+        if lead.assigned_to != current_user.id and current_user.role != UserRole.ADMIN:
             return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         
         data = request.get_json()

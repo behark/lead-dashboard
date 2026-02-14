@@ -94,7 +94,7 @@
             <div class="mt-2">
                 <strong>{{ attention.hot_neglected|length }}</strong> hot leads not contacted recently
             </div>
-            <a href="?temp=HOT&status=NEW" class="btn btn-sm btn-outline-danger mt-2">View</a>
+            <a href="?view=full&temp=HOT&status=NEW" class="btn btn-sm btn-outline-danger mt-2">View</a>
         </div>
         {% else %}
         <div class="metric-card">
@@ -118,8 +118,9 @@
     </div>
     
     <form method="GET" action="{{ url_for('main.index') }}" class="row g-2 align-items-center">
+        <input type="hidden" name="view" value="full">
         <div class="col-md-2">
-            <input type="text" name="search" class="form-control" placeholder="Search name..." value="{{ search_query }}">
+            <input type="text" name="search" class="form-control" placeholder="Search..." value="{{ search_query }}">
         </div>
         <div class="col-md-2">
             <select name="country" class="form-select">
@@ -177,7 +178,7 @@
         </div>
     </form>
     <div class="mt-2">
-        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+        <a href="{{ url_for('main.index', view='full') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
         <span class="text-muted ms-3">Page {{ pagination.page }}/{{ pagination.pages }} ({{ pagination.total }} results)</span>
     </div>
 </div>
@@ -202,6 +203,7 @@
 
 <!-- Bulk Actions -->
 <form method="POST" action="{{ url_for('main.bulk_action') }}" id="bulkForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="d-flex gap-2 mb-3">
         <select name="action" class="form-select form-select-sm" style="width: auto;" id="bulkAction">
             <option value="">Bulk Action...</option>
@@ -326,7 +328,7 @@
     <ul class="pagination justify-content-center">
         {% if pagination.has_prev %}
         <li class="page-item">
-            <a class="page-link" href="{{ url_for('main.index', page=pagination.prev_num, **current_filters) }}">Previous</a>
+            <a class="page-link" href="{{ url_for('main.index', page=pagination.prev_num, view='full', **current_filters) }}">Previous</a>
         </li>
         {% endif %}
         
@@ -335,7 +337,7 @@
                 {% if p == pagination.page %}
                 <li class="page-item active"><span class="page-link">{{ p }}</span></li>
                 {% else %}
-                <li class="page-item"><a class="page-link" href="{{ url_for('main.index', page=p, **current_filters) }}">{{ p }}</a></li>
+                <li class="page-item"><a class="page-link" href="{{ url_for('main.index', page=p, view='full', **current_filters) }}">{{ p }}</a></li>
                 {% endif %}
             {% else %}
                 <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -344,7 +346,7 @@
         
         {% if pagination.has_next %}
         <li class="page-item">
-            <a class="page-link" href="{{ url_for('main.index', page=pagination.next_num, **current_filters) }}">Next</a>
+            <a class="page-link" href="{{ url_for('main.index', page=pagination.next_num, view='full', **current_filters) }}">Next</a>
         </li>
         {% endif %}
     </ul>
@@ -360,6 +362,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form id="saveFilterForm" method="POST" action="{{ url_for('main.save_filter') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Selection Name:</label>
@@ -639,7 +642,8 @@ function hideLead(leadId, btn) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': '{{ csrf_token() }}'
         }
     })
     .then(r => r.json())
